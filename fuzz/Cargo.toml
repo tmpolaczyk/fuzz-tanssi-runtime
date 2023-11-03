@@ -1,0 +1,61 @@
+[package]
+name = "fuzz-tanssi-runtime-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+lazy_static = "1.4.0"
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
+dancebox-runtime = { path = "../../tanssi/runtime/dancebox", default-features = false, features = ["std", "try-runtime"] }
+pallet-author-noting = { path = "../../tanssi/pallets/author-noting", default-features = false }
+pallet-configuration = { path = "../../tanssi/pallets/configuration", default-features = false }
+tp-author-noting-inherent = { path = "../../tanssi/primitives/author-noting-inherent", default-features = false }
+tp-container-chain-genesis-data = { path = "../../tanssi/primitives/container-chain-genesis-data", default-features = false, features = [ "json", "std" ] }
+
+cumulus-primitives-parachain-inherent = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+cumulus-test-relay-sproof-builder = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+cumulus-pallet-parachain-system = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+cumulus-primitives-core = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+frame-support = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-v1.1.0", version = "4.0.0-dev", default-features = false }
+frame-system = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-v1.1.0", version = "4.0.0-dev", default-features = false }
+pallet-balances = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+pallet-timestamp = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+parity-scale-codec = { version = "3.0.0", default-features = false, features = [ "derive", "max-encoded-len" ] }
+sc-chain-spec = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0" }
+sc-client-api = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+sc-service = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0" }
+sp-consensus = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+sp-consensus-aura = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+sp-consensus-babe = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+sp-consensus-slots = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+sp-inherents = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+sp-runtime = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-v1.1.0", version = "24.0.0", default-features = false }
+sp-state-machine = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+sp-storage = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+sp-transaction-storage-proof = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+sp-core = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-v1.1.0", version = "21.0.0", default-features = false }
+nimbus-primitives = { git = "https://github.com/moondance-labs/moonkit", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+
+serde = { version = "1.0.152", default-features = false }
+futures = "0.3.1"
+
+
+[dependencies.fuzz-tanssi-runtime]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "fuzz_raw"
+path = "fuzz_targets/fuzz_raw.rs"
+test = false
+doc = false
