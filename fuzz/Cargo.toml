@@ -13,8 +13,11 @@ libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 dancebox-runtime = { path = "../../tanssi/runtime/dancebox", default-features = false, features = ["std", "try-runtime"] }
 pallet-author-noting = { path = "../../tanssi/pallets/author-noting", default-features = false }
 pallet-configuration = { path = "../../tanssi/pallets/configuration", default-features = false }
+pallet-invulnerables = { path = "../../tanssi/pallets/invulnerables", default-features = false }
+pallet-registrar = { path = "../../tanssi/pallets/registrar", default-features = false }
 tp-author-noting-inherent = { path = "../../tanssi/primitives/author-noting-inherent", default-features = false }
 tp-container-chain-genesis-data = { path = "../../tanssi/primitives/container-chain-genesis-data", default-features = false, features = [ "json", "std" ] }
+tp-core = { path = "../../tanssi/primitives/core", default-features = false, features = [ "std" ] }
 
 cumulus-primitives-parachain-inherent = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
 cumulus-test-relay-sproof-builder = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
@@ -42,7 +45,8 @@ nimbus-primitives = { git = "https://github.com/moondance-labs/moonkit", branch 
 
 serde = { version = "1.0.152", default-features = false }
 futures = "0.3.1"
-
+rayon = "1"
+indicatif = {version = "0.17", features = ["rayon"]}
 
 [dependencies.fuzz-tanssi-runtime]
 path = ".."
@@ -57,5 +61,11 @@ debug = 1
 [[bin]]
 name = "fuzz_raw"
 path = "fuzz_targets/fuzz_raw.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_raw_coverage"
+path = "fuzz_targets/fuzz_raw_coverage.rs"
 test = false
 doc = false

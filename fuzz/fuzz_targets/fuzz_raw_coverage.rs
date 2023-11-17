@@ -1,8 +1,70 @@
-#![no_main]
+//! Generate coverage for the `fuzz_raw` target.
+//! Warning: this file must be manually updated with the new contents of `fuzz_raw.rs`.
 
-//! Tanssi Runtime fuzz target. Generates random extrinsics and some mock relay validation data (but no sudo).
-//!
-//! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/8d45d9960cff6f6c5aa8bf19808f84ef12b08535/node-template-fuzzer/src/main.rs
+fn main() {
+    use {
+        indicatif::{ParallelProgressIterator, ProgressStyle},
+        rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
+        std::collections::HashSet,
+    };
+
+    let mut corpus_path = env!("CARGO_MANIFEST_DIR").to_string();
+    corpus_path.push_str("/corpus/fuzz_raw");
+    println!("corpus path: {:?}", corpus_path);
+    let mut seen_paths = HashSet::new();
+    let mut i = 0;
+    // Process new entries until we catch up with the fuzzer
+    // First iteration will process all entries
+    // Second iteration will only process new entries
+    loop {
+        i += 1;
+        let entries: Vec<_> = std::fs::read_dir(&corpus_path)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Failed to read corpus path {:?}, error: {:?}",
+                    corpus_path, e
+                )
+            })
+            .filter_map(|entry| {
+                if entry.is_ok() && seen_paths.contains(&entry.as_ref().unwrap().path()) {
+                    None
+                } else {
+                    Some(entry)
+                }
+            })
+            .collect();
+        println!("iteration {} new entries: {}", i, entries.len());
+
+        if entries.is_empty() {
+            break;
+        }
+
+        let style = ProgressStyle::with_template("[{elapsed_precise}] ETA: [{eta_precise}] {bar:40.cyan/blue} {percent}% {pos:>7}/{len:7} {msg}").unwrap();
+        entries
+            .par_iter()
+            .progress_with_style(style)
+            .for_each(|entry| {
+                if entry.is_err() {
+                    return;
+                }
+                let entry = entry.as_ref().unwrap();
+                let data = std::fs::read(entry.path());
+                if data.is_err() {
+                    return;
+                }
+                let data = data.unwrap();
+                fuzz_main(&data);
+            });
+
+        seen_paths.extend(
+            entries
+                .into_iter()
+                .filter_map(|entry| entry.ok().map(|entry| entry.path())),
+        );
+    }
+}
+
+// fuzz_raw.rs
 
 use {
     cumulus_primitives_core::ParaId,
@@ -1064,17 +1126,3 @@ fn fuzz_main(data: &[u8]) {
         <AllPalletsWithSystem as IntegrityTest>::integrity_test();
     });
 }
-
-libfuzzer_sys::fuzz_target!(|data: &[u8]| { fuzz_main(data) });
-
-libfuzzer_sys::fuzz_mutator!(
-    |data: &mut [u8], size: usize, max_size: usize, _seed: u32| {
-        let mut data = data;
-        let cap = data.len();
-        let new_size = libfuzzer_sys::fuzzer_mutate(&mut data, size, cap);
-        mutate_interesting_accounts(&mut data[..new_size]);
-        mutate_interesting_para_ids(&mut data[..new_size]);
-
-        new_size
-    }
-);
