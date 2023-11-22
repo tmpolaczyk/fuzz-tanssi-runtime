@@ -507,6 +507,7 @@ fn fuzz_main(data: &[u8]) {
                             Err(_) => return None,
                         };
                     // Allow root to call any pallet_registrar extrinsic, as it is unlikely to brick the chain
+                    // TODO: except register(1000), because that may actually break some things
                     let extrinsic = RuntimeCall::Registrar(call_registrar);
                     return Some((maybe_lapse, origin, extrinsic));
                 }

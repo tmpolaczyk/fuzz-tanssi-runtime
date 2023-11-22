@@ -1,5 +1,8 @@
 //! Generate coverage for the `fuzz_raw` target.
-//! Warning: this file must be manually updated with the new contents of `fuzz_raw.rs`.
+//! Warning: this file has been automatically generated using the `run_coverage.py` script
+//! from the contents of `fuzz_targets/coverage.rs` and `fuzz_targets/fuzz_raw.rs`.
+
+const FUZZ_TARGET_NAME: &str = "fuzz_raw";
 
 fn main() {
     use {
@@ -9,7 +12,8 @@ fn main() {
     };
 
     let mut corpus_path = env!("CARGO_MANIFEST_DIR").to_string();
-    corpus_path.push_str("/corpus/fuzz_raw");
+    corpus_path.push_str("/corpus/");
+    corpus_path.push_str(FUZZ_TARGET_NAME);
     println!("corpus path: {:?}", corpus_path);
     let mut seen_paths = HashSet::new();
     let mut i = 0;
@@ -569,6 +573,7 @@ fn fuzz_main(data: &[u8]) {
                             Err(_) => return None,
                         };
                     // Allow root to call any pallet_registrar extrinsic, as it is unlikely to brick the chain
+                    // TODO: except register(1000), because that may actually break some things
                     let extrinsic = RuntimeCall::Registrar(call_registrar);
                     return Some((maybe_lapse, origin, extrinsic));
                 }
