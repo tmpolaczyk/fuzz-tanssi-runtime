@@ -10,6 +10,7 @@ use {
         AccountId, AllPalletsWithSystem, BlockNumber, Executive, Runtime, RuntimeCall,
         RuntimeOrigin, Signature, UncheckedExtrinsic, SLOT_DURATION,
     },
+    dp_core::well_known_keys::PARAS_HEADS_INDEX,
     frame_support::{
         dispatch::GetDispatchInfo,
         pallet_prelude::Weight,
@@ -31,7 +32,6 @@ use {
         time::{Duration, Instant},
     },
     tp_container_chain_genesis_data::ContainerChainGenesisData,
-    dp_core::well_known_keys::PARAS_HEADS_INDEX,
 };
 
 // We use a simple Map-based Externalities implementation
@@ -128,6 +128,38 @@ impl<'a> Iterator for RelayData<'a> {
         self.size += 1;
         res
     }
+}
+
+fn recursively_find_call(call: RuntimeCall, matches_on: fn(RuntimeCall) -> bool) -> bool {
+    if let RuntimeCall::Utility(
+        pallet_utility::Call::batch { calls }
+        | pallet_utility::Call::force_batch { calls }
+        | pallet_utility::Call::batch_all { calls },
+    ) = call
+    {
+        for call in calls {
+            if recursively_find_call(call.clone(), matches_on) {
+                return true;
+            }
+        }
+    }
+    /*
+    else if let RuntimeCall::Lottery(pallet_lottery::Call::buy_ticket { call })
+    | RuntimeCall::Multisig(pallet_multisig::Call::as_multi_threshold_1 {
+        call, ..
+    })
+    | RuntimeCall::Utility(pallet_utility::Call::as_derivative { call, .. })
+    | RuntimeCall::Council(pallet_collective::Call::propose {
+        proposal: call, ..
+    }) = call
+    {
+        return recursively_find_call(*call.clone(), matches_on);
+    }
+    */
+    else if matches_on(call) {
+        return true;
+    }
+    false
 }
 
 /// Helper function to generate a crypto pair from seed

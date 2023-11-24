@@ -3215,6 +3215,7 @@ dependencies = [
  "pallet-invulnerables",
  "pallet-registrar",
  "pallet-timestamp",
+ "pallet-utility",
  "parity-scale-codec",
  "rayon",
  "sc-chain-spec",

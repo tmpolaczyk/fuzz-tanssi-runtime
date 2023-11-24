@@ -28,6 +28,7 @@ frame-support = { git = "https://github.com/moondance-labs/polkadot-sdk.git", br
 frame-system = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-v1.1.0", version = "4.0.0-dev", default-features = false }
 pallet-balances = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
 pallet-timestamp = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
+pallet-utility = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
 parity-scale-codec = { version = "3.0.0", default-features = false, features = [ "derive", "max-encoded-len" ] }
 sc-chain-spec = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0" }
 sc-client-api = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
