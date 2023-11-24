@@ -89,7 +89,7 @@ def execute_coverage_binary(target_name):
     try:
         env = os.environ.copy()
         # TODO: use absolute path
-        env["LLVM_PROFILE_FILE"] = "proffiles/default_%m_%p.profraw"
+        #env["LLVM_PROFILE_FILE"] = "proffiles/default_%m_%p.profraw"
         subprocess.run([f"./target/debug/{target_name}_coverage"])
     except Exception as e:
         print(f"Failed to execute '{target_name}_coverage': {e}")

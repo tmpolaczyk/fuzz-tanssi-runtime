@@ -31,7 +31,7 @@ use {
         time::{Duration, Instant},
     },
     tp_container_chain_genesis_data::ContainerChainGenesisData,
-    tp_core::well_known_keys::PARAS_HEADS_INDEX,
+    dp_core::well_known_keys::PARAS_HEADS_INDEX,
 };
 
 // We use a simple Map-based Externalities implementation
@@ -860,7 +860,7 @@ fn fuzz_main(data: &[u8]) {
                 }
             }
 
-            // Add randomness until explicitly removed
+            // Add randomness unless explicitly removed
             if !remove_current_block_randomness {
                 let key =
                     cumulus_primitives_core::relay_chain::well_known_keys::CURRENT_BLOCK_RANDOMNESS;
@@ -869,7 +869,7 @@ fn fuzz_main(data: &[u8]) {
                 value[0..4].copy_from_slice(&block.to_le_bytes());
                 // Avoid case of randomness 000000
                 value[31] |= 1;
-                additional_key_values.push((key.to_vec(), value.to_vec()));
+                additional_key_values.push((key.to_vec(), Some(value).encode()));
             }
 
             let mocked_parachain = MockValidationDataInherentDataProvider {
@@ -944,11 +944,13 @@ fn fuzz_main(data: &[u8]) {
         // Calls that need to be called before each block starts (init_calls) go here
     };
 
-    let end_block = |current_block: u32, _current_timestamp: u64| {
+    let end_block = |_current_block: u32, _current_timestamp: u64| {
         #[cfg(not(fuzzing))]
         println!("  finalizing block {current_block}");
         Executive::finalize_block();
 
+        // Per block try-state disabled for performance, we only check it once at the end
+        /*
         #[cfg(not(fuzzing))]
         println!("  testing invariants for block {current_block}");
         <AllPalletsWithSystem as TryState<BlockNumber>>::try_state(
@@ -956,6 +958,7 @@ fn fuzz_main(data: &[u8]) {
             TryStateSelect::All,
         )
         .unwrap();
+        */
     };
 
     externalities.execute_with(|| start_block(current_block, current_timestamp));
@@ -1058,6 +1061,14 @@ fn fuzz_main(data: &[u8]) {
         if total_issuance != counted_issuance {
             panic!("Inconsistent total issuance: {total_issuance} but counted {counted_issuance}");
         }
+
+        #[cfg(not(fuzzing))]
+        println!("  testing invariants for block {current_block}");
+        <AllPalletsWithSystem as TryState<BlockNumber>>::try_state(
+            current_block,
+            TryStateSelect::All,
+        )
+        .unwrap();
 
         #[cfg(not(fuzzing))]
         println!("\nrunning integrity tests\n");

@@ -17,7 +17,8 @@ pallet-invulnerables = { path = "../../tanssi/pallets/invulnerables", default-fe
 pallet-registrar = { path = "../../tanssi/pallets/registrar", default-features = false }
 tp-author-noting-inherent = { path = "../../tanssi/primitives/author-noting-inherent", default-features = false }
 tp-container-chain-genesis-data = { path = "../../tanssi/primitives/container-chain-genesis-data", default-features = false, features = [ "json", "std" ] }
-tp-core = { path = "../../tanssi/primitives/core", default-features = false, features = [ "std" ] }
+
+dp-core = { git = "https://github.com/moondance-labs/dancekit", branch = "tanssi-polkadot-v1.1.0", default-features = false, features = [ "std" ] }
 
 cumulus-primitives-parachain-inherent = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
 cumulus-test-relay-sproof-builder = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.1.0", default-features = false }
