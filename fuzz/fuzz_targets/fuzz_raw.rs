@@ -437,6 +437,7 @@ lazy_static::lazy_static! {
                 // This should initialize it to whatever we have set in the pallet
                 polkadot_xcm: dancebox_runtime::PolkadotXcmConfig::default(),
                 transaction_payment: Default::default(),
+                tx_pause: Default::default(),
             }
             .build_storage()
             .unwrap()
