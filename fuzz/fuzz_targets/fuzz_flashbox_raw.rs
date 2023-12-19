@@ -6,11 +6,11 @@
 
 use {
     cumulus_primitives_core::ParaId,
-    dancebox_runtime::{
+    dp_core::well_known_keys::PARAS_HEADS_INDEX,
+    flashbox_runtime::{
         AccountId, AllPalletsWithSystem, BlockNumber, Executive, Runtime, RuntimeCall,
         RuntimeOrigin, Signature, UncheckedExtrinsic, SLOT_DURATION,
     },
-    dp_core::well_known_keys::PARAS_HEADS_INDEX,
     frame_metadata::{v15::RuntimeMetadataV15, RuntimeMetadata, RuntimeMetadataPrefixed},
     frame_support::{
         dispatch::GetDispatchInfo,
@@ -259,8 +259,8 @@ where
 /// Generate the session keys from individual elements.
 ///
 /// The input must be a tuple of individual keys (a single arg for now since we have just one key).
-pub fn template_session_keys(keys: NimbusId) -> dancebox_runtime::SessionKeys {
-    dancebox_runtime::SessionKeys { nimbus: keys }
+pub fn template_session_keys(keys: NimbusId) -> flashbox_runtime::SessionKeys {
+    flashbox_runtime::SessionKeys { nimbus: keys }
 }
 
 /// Helper function to turn a list of names into a list of `(AccountId, NimbusId)`
@@ -366,9 +366,9 @@ lazy_static::lazy_static! {
     };
     static ref INTERESTING_ACCOUNTS: Vec<AccountId> = {
         let accounts_with_ed = vec![
-            dancebox_runtime::StakingAccount::get(),
-            dancebox_runtime::ParachainBondAccount::get(),
-            dancebox_runtime::PendingRewardsAccount::get(),
+            flashbox_runtime::StakingAccount::get(),
+            flashbox_runtime::ParachainBondAccount::get(),
+            flashbox_runtime::PendingRewardsAccount::get(),
         ];
 
         VALID_ORIGINS.iter().cloned().chain(
@@ -391,7 +391,7 @@ lazy_static::lazy_static! {
         let genesis_storage: Storage = {
             use sp_runtime::BuildStorage;
             use tp_container_chain_genesis_data::json::container_chain_genesis_data_from_path;
-            use dancebox_runtime::prod_or_fast;
+            use flashbox_runtime::prod_or_fast;
             use cumulus_primitives_core::ParaId;
 
             let container_chains: Vec<&str> = vec![];
@@ -433,19 +433,19 @@ lazy_static::lazy_static! {
                 .map(|(para_id, genesis_data, _boot_nodes)| (para_id, genesis_data))
                 .collect();
             let accounts_with_ed = vec![
-                dancebox_runtime::StakingAccount::get(),
-                dancebox_runtime::ParachainBondAccount::get(),
-                dancebox_runtime::PendingRewardsAccount::get(),
+                flashbox_runtime::StakingAccount::get(),
+                flashbox_runtime::ParachainBondAccount::get(),
+                flashbox_runtime::PendingRewardsAccount::get(),
             ];
 
-            dancebox_runtime::RuntimeGenesisConfig {
-                system: dancebox_runtime::SystemConfig {
-                    code: dancebox_runtime::WASM_BINARY
+            flashbox_runtime::RuntimeGenesisConfig {
+                system: flashbox_runtime::SystemConfig {
+                    code: flashbox_runtime::WASM_BINARY
                         .expect("WASM binary was not build, please build it!")
                         .to_vec(),
                     ..Default::default()
                 },
-                balances: dancebox_runtime::BalancesConfig {
+                balances: flashbox_runtime::BalancesConfig {
                     balances: endowed_accounts
                         .iter()
                         .cloned()
@@ -454,18 +454,18 @@ lazy_static::lazy_static! {
                             accounts_with_ed
                                 .iter()
                                 .cloned()
-                                .map(|k| (k, dancebox_runtime::EXISTENTIAL_DEPOSIT))
+                                .map(|k| (k, flashbox_runtime::EXISTENTIAL_DEPOSIT))
                         )
                         .collect(),
                 },
-                parachain_info: dancebox_runtime::ParachainInfoConfig {
+                parachain_info: flashbox_runtime::ParachainInfoConfig {
                     parachain_id: 1000.into(),
                     ..Default::default()
                 },
-                invulnerables: dancebox_runtime::InvulnerablesConfig {
+                invulnerables: flashbox_runtime::InvulnerablesConfig {
                     invulnerables: invulnerables.iter().cloned().map(|(acc, _)| acc).collect(),
                 },
-                session: dancebox_runtime::SessionConfig {
+                session: flashbox_runtime::SessionConfig {
                     keys: invulnerables
                         .into_iter()
                         .map(|(acc, aura)| {
@@ -478,7 +478,7 @@ lazy_static::lazy_static! {
                         .collect(),
                 },
                 parachain_system: Default::default(),
-                configuration: dancebox_runtime::ConfigurationConfig {
+                configuration: flashbox_runtime::ConfigurationConfig {
                         config: pallet_configuration::HostConfiguration {
                             max_collators: 100u32,
                             min_orchestrator_collators: 1u32,
@@ -488,21 +488,20 @@ lazy_static::lazy_static! {
                         },
                         ..Default::default()
                 },
-                registrar: dancebox_runtime::RegistrarConfig { para_ids },
-                data_preservers: dancebox_runtime::DataPreserversConfig::default(),
-                services_payment: dancebox_runtime::ServicesPaymentConfig { para_id_credits },
-                sudo: dancebox_runtime::SudoConfig {
+                registrar: flashbox_runtime::RegistrarConfig { para_ids },
+                data_preservers: flashbox_runtime::DataPreserversConfig::default(),
+                services_payment: flashbox_runtime::ServicesPaymentConfig { para_id_credits },
+                sudo: flashbox_runtime::SudoConfig {
                     key: None,
                 },
-                migrations: dancebox_runtime::MigrationsConfig {
+                migrations: flashbox_runtime::MigrationsConfig {
                     ..Default::default()
                 },
-                maintenance_mode: dancebox_runtime::MaintenanceModeConfig {
+                maintenance_mode: flashbox_runtime::MaintenanceModeConfig {
                     start_in_maintenance_mode: false,
                     ..Default::default()
                 },
                 // This should initialize it to whatever we have set in the pallet
-                polkadot_xcm: dancebox_runtime::PolkadotXcmConfig::default(),
                 transaction_payment: Default::default(),
                 tx_pause: Default::default(),
             }
@@ -990,7 +989,7 @@ fn fuzz_main(data: &[u8]) {
                             Err(_e) => continue,
                         };
                         */
-                        // Ignore panics because `dancebox_runtime::api::dispatch` panics on
+                        // Ignore panics because `flashbox_runtime::api::dispatch` panics on
                         // invalid input, and we have no easy way to validate the input here.
                         let panic_hook = std::panic::take_hook();
                         std::panic::set_hook(Box::new(|_| {}));
@@ -998,7 +997,7 @@ fn fuzz_main(data: &[u8]) {
                             // TODO: this should be run using externalities, right?
                             //externalities
                             //    .execute_with(||
-                            dancebox_runtime::api::dispatch(method, raw_data)
+                            flashbox_runtime::api::dispatch(method, raw_data)
                         });
                         std::panic::set_hook(panic_hook);
 
@@ -1085,7 +1084,7 @@ fn fuzz_main(data: &[u8]) {
             /*
             #[cfg(not(fuzzing))]
             {
-                let all_events = dancebox_runtime::System::events();
+                let all_events = flashbox_runtime::System::events();
                 let events: Vec<_> = all_events.clone().into_iter().skip(already_seen).collect();
                 already_seen = all_events.len();
                 println!("  events:     {:?}\n", events);

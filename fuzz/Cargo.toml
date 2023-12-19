@@ -11,6 +11,7 @@ cargo-fuzz = true
 lazy_static = "1.4.0"
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 dancebox-runtime = { path = "../../tanssi/runtime/dancebox", default-features = false, features = ["std", "try-runtime"] }
+flashbox-runtime = { path = "../../tanssi/runtime/flashbox", default-features = false, features = ["std", "try-runtime"] }
 pallet-author-noting = { path = "../../tanssi/pallets/author-noting", default-features = false }
 pallet-configuration = { path = "../../tanssi/pallets/configuration", default-features = false }
 pallet-invulnerables = { path = "../../tanssi/pallets/invulnerables", default-features = false }
@@ -44,6 +45,7 @@ sp-storage = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = 
 sp-transaction-storage-proof = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.3.0", default-features = false }
 sp-core = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-v1.3.0", version = "21.0.0", default-features = false }
 nimbus-primitives = { git = "https://github.com/moondance-labs/moonkit", branch = "tanssi-polkadot-v1.3.0", default-features = false }
+frame-metadata = "16"
 
 serde = { version = "1.0.152", default-features = false }
 futures = "0.3.1"
@@ -69,5 +71,11 @@ doc = false
 [[bin]]
 name = "fuzz_raw_coverage"
 path = "fuzz_targets/fuzz_raw_coverage.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_flashbox_raw"
+path = "fuzz_targets/fuzz_flashbox_raw.rs"
 test = false
 doc = false

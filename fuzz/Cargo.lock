@@ -1740,6 +1740,7 @@ name = "cumulus-pallet-session-benchmarking"
 version = "3.0.0"
 source = "git+https://github.com/moondance-labs/polkadot-sdk?branch=tanssi-polkadot-v1.3.0#d93a55aeadb3278640b2e6a9aa03198f98ce94d3"
 dependencies = [
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "pallet-session",
@@ -2004,9 +2005,11 @@ dependencies = [
  "cumulus-primitives-timestamp",
  "cumulus-primitives-utility",
  "dp-core",
+ "frame-benchmarking",
  "frame-executive",
  "frame-support",
  "frame-system",
+ "frame-system-benchmarking",
  "frame-system-rpc-runtime-api",
  "frame-try-runtime",
  "hex-literal 0.3.4",
@@ -2021,6 +2024,7 @@ dependencies = [
  "pallet-collator-assignment",
  "pallet-collator-assignment-runtime-api",
  "pallet-configuration",
+ "pallet-data-preservers",
  "pallet-inflation-rewards",
  "pallet-initializer",
  "pallet-invulnerables",
@@ -2040,6 +2044,7 @@ dependencies = [
  "pallet-tx-pause",
  "pallet-utility",
  "pallet-xcm",
+ "pallet-xcm-benchmarks",
  "parachain-info",
  "parity-scale-codec",
  "polkadot-parachain-primitives",
@@ -2871,6 +2876,80 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
+name = "flashbox-runtime"
+version = "0.1.0"
+dependencies = [
+ "cumulus-pallet-parachain-system",
+ "cumulus-pallet-session-benchmarking",
+ "cumulus-primitives-core",
+ "cumulus-primitives-timestamp",
+ "cumulus-primitives-utility",
+ "dp-core",
+ "frame-benchmarking",
+ "frame-executive",
+ "frame-support",
+ "frame-system",
+ "frame-system-benchmarking",
+ "frame-system-rpc-runtime-api",
+ "frame-try-runtime",
+ "hex-literal 0.3.4",
+ "log",
+ "nimbus-primitives",
+ "pallet-author-inherent",
+ "pallet-author-noting",
+ "pallet-author-noting-runtime-api",
+ "pallet-authority-assignment",
+ "pallet-authority-mapping",
+ "pallet-balances",
+ "pallet-collator-assignment",
+ "pallet-collator-assignment-runtime-api",
+ "pallet-configuration",
+ "pallet-data-preservers",
+ "pallet-inflation-rewards",
+ "pallet-initializer",
+ "pallet-invulnerables",
+ "pallet-maintenance-mode",
+ "pallet-migrations",
+ "pallet-proxy",
+ "pallet-registrar",
+ "pallet-registrar-runtime-api",
+ "pallet-root-testing",
+ "pallet-services-payment",
+ "pallet-session",
+ "pallet-sudo",
+ "pallet-timestamp",
+ "pallet-transaction-payment",
+ "pallet-transaction-payment-rpc-runtime-api",
+ "pallet-tx-pause",
+ "pallet-utility",
+ "parachain-info",
+ "parity-scale-codec",
+ "polkadot-parachain-primitives",
+ "polkadot-runtime-common",
+ "scale-info",
+ "serde",
+ "smallvec",
+ "sp-api",
+ "sp-application-crypto",
+ "sp-block-builder",
+ "sp-consensus-aura",
+ "sp-core",
+ "sp-debug-derive",
+ "sp-inherents",
+ "sp-offchain",
+ "sp-runtime",
+ "sp-session",
+ "sp-std",
+ "sp-transaction-pool",
+ "sp-trie",
+ "sp-version",
+ "substrate-wasm-builder",
+ "tp-author-noting-inherent",
+ "tp-consensus",
+ "tp-traits",
+]
+
+[[package]]
 name = "flate2"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3103,6 +3182,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "frame-system-benchmarking"
+version = "4.0.0-dev"
+source = "git+https://github.com/moondance-labs/polkadot-sdk?branch=tanssi-polkadot-v1.3.0#d93a55aeadb3278640b2e6a9aa03198f98ce94d3"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
 name = "frame-system-rpc-runtime-api"
 version = "4.0.0-dev"
 source = "git+https://github.com/moondance-labs/polkadot-sdk?branch=tanssi-polkadot-v1.3.0#d93a55aeadb3278640b2e6a9aa03198f98ce94d3"
@@ -3279,6 +3373,8 @@ dependencies = [
  "cumulus-test-relay-sproof-builder",
  "dancebox-runtime",
  "dp-core",
+ "flashbox-runtime",
+ "frame-metadata",
  "frame-support",
  "frame-system",
  "futures",
@@ -5553,6 +5649,7 @@ name = "pallet-author-inherent"
 version = "0.9.0"
 source = "git+https://github.com/moondance-labs/moonkit?branch=tanssi-polkadot-v1.3.0#de13eacce0681be329ec06c57c469ef98df22ad9"
 dependencies = [
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "log",
@@ -5713,6 +5810,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "scale-info",
+ "serde",
  "sp-core",
  "sp-runtime",
  "sp-std",
@@ -5736,6 +5834,25 @@ dependencies = [
  "frame-support",
  "frame-system",
  "log",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-core",
+ "sp-runtime",
+ "sp-std",
+ "tp-traits",
+]
+
+[[package]]
+name = "pallet-data-preservers"
+version = "0.1.0"
+dependencies = [
+ "dp-core",
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "nimbus-primitives",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -5844,6 +5961,7 @@ dependencies = [
  "pallet-balances",
  "pallet-session",
  "parity-scale-codec",
+ "rand 0.8.5",
  "scale-info",
  "sp-runtime",
  "sp-staking",
@@ -5909,12 +6027,14 @@ name = "pallet-pooled-staking"
 version = "0.1.0"
 dependencies = [
  "dp-core",
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "log",
  "nimbus-primitives",
  "parity-scale-codec",
  "scale-info",
+ "serde",
  "sp-core",
  "sp-runtime",
  "sp-std",
@@ -5994,6 +6114,7 @@ dependencies = [
  "log",
  "parity-scale-codec",
  "scale-info",
+ "serde",
  "sp-runtime",
  "sp-std",
  "tp-traits",
