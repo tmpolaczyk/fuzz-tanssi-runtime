@@ -41,15 +41,21 @@ def write_coverage_target(target_name, file1, file2, output_file):
         file2_contents = f.readlines()
 
     file2_contents_cleaned = [f"\n// {target_name}.rs"]
+    clippy_allows = []
     for line in file2_contents:
         stripped_line = line.strip()
         if stripped_line.startswith("libfuzzer_sys::fuzz_target!"):
             break
-        if not stripped_line.startswith("//!") and stripped_line != "#![no_main]":
+        if stripped_line.startswith("#!["):
+            if stripped_line != "#![no_main]":
+                # Store attrs and move them to the top
+                clippy_allows.append(line)
+            continue
+        if not stripped_line.startswith("//!"):
             file2_contents_cleaned.append(line)
 
     # Merge the contents with the header, remove the last newline, and write to the output file
-    final_content = header + file1_contents + file2_contents_cleaned
+    final_content = header + clippy_allows + file1_contents + file2_contents_cleaned
     if final_content[-1] == "\n":
         final_content.pop()
 

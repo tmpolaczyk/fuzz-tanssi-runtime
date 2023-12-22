@@ -2,6 +2,8 @@
 //! Warning: this file has been automatically generated using the `run_coverage.py` script
 //! from the contents of `fuzz_targets/coverage.rs` and `fuzz_targets/fuzz_raw.rs`.
 
+#![allow(clippy::absurd_extreme_comparisons)]
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 const FUZZ_TARGET_NAME: &str = "fuzz_raw";
 
 fn main() {
@@ -76,6 +78,8 @@ use {
         AccountId, AllPalletsWithSystem, BlockNumber, Executive, Runtime, RuntimeCall,
         RuntimeOrigin, Signature, UncheckedExtrinsic, SLOT_DURATION,
     },
+    dp_core::well_known_keys::PARAS_HEADS_INDEX,
+    frame_metadata::{v15::RuntimeMetadataV15, RuntimeMetadata, RuntimeMetadataPrefixed},
     frame_support::{
         dispatch::GetDispatchInfo,
         pallet_prelude::Weight,
@@ -93,11 +97,10 @@ use {
         Digest, DigestItem, Storage,
     },
     std::{
-        collections::VecDeque,
+        cell::Cell,
         time::{Duration, Instant},
     },
     tp_container_chain_genesis_data::ContainerChainGenesisData,
-    tp_core::well_known_keys::PARAS_HEADS_INDEX,
 };
 
 // We use a simple Map-based Externalities implementation
@@ -193,6 +196,94 @@ impl<'a> Iterator for RelayData<'a> {
         self.pointer = next_pointer + RELAY_DELIMITER.len();
         self.size += 1;
         res
+    }
+}
+
+fn recursively_find_call(call: RuntimeCall, matches_on: fn(RuntimeCall) -> bool) -> bool {
+    if let RuntimeCall::Utility(
+        pallet_utility::Call::batch { calls }
+        | pallet_utility::Call::force_batch { calls }
+        | pallet_utility::Call::batch_all { calls },
+    ) = call
+    {
+        for call in calls {
+            if recursively_find_call(call.clone(), matches_on) {
+                return true;
+            }
+        }
+    }
+    /*
+    else if let RuntimeCall::Lottery(pallet_lottery::Call::buy_ticket { call })
+    | RuntimeCall::Multisig(pallet_multisig::Call::as_multi_threshold_1 {
+        call, ..
+    })
+    | RuntimeCall::Utility(pallet_utility::Call::as_derivative { call, .. })
+    | RuntimeCall::Council(pallet_collective::Call::propose {
+        proposal: call, ..
+    }) = call
+    {
+        return recursively_find_call(*call.clone(), matches_on);
+    }
+    */
+    else if matches_on(call) {
+        return true;
+    }
+    false
+}
+
+/// Return true if the root origin can execute this extrinsic.
+/// Any extrinsic that could brick the chain should be disabled, we only want to test real-world scenarios.
+fn root_can_call(call: &RuntimeCall) -> bool {
+    match call {
+        // Allow root to call any pallet_registrar extrinsic, as it is unlikely to brick the chain
+        // TODO: except register(1000), because that may actually break some things
+        RuntimeCall::Registrar(..) => true,
+        // Allow root to call pallet_author_noting killAuthorData
+        RuntimeCall::AuthorNoting(pallet_author_noting::pallet::Call::kill_author_data {
+            ..
+        }) => true,
+        RuntimeCall::Invulnerables(call_invulnerables) => {
+            // Allow root to add any invulnerable
+            if let pallet_invulnerables::pallet::Call::add_invulnerable { .. } = call_invulnerables
+            {
+                return true;
+            }
+            // Allow root to remove any invulnerable except Alice
+            match call_invulnerables {
+                pallet_invulnerables::pallet::Call::remove_invulnerable { who }
+                    if *who != *ALICE =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+            // Allow root to set new invulnerables, but always keep Alice
+            if let pallet_invulnerables::pallet::Call::set_invulnerables { new } =
+                call_invulnerables
+            {
+                if !new.contains(&ALICE) {
+                    return false;
+                }
+                return true;
+            }
+
+            false
+        }
+        // Allow root to start and stop maintenance mode
+        RuntimeCall::MaintenanceMode(..) => true,
+        // Allow root to pause/unpause any extrinsic
+        RuntimeCall::TxPause(..) => true,
+        // Allow root to change configuration, except using set_bypass_consistency_check
+        RuntimeCall::Configuration(call_configuration) => {
+            if let pallet_configuration::pallet::Call::set_bypass_consistency_check { .. } =
+                call_configuration
+            {
+                false
+            } else {
+                true
+            }
+        }
+        _ => false,
     }
 }
 
@@ -321,15 +412,13 @@ fn mutate_interesting_para_ids(data: &mut [u8]) {
     }
 }
 
-const NUM_VALID_ORIGINS: usize = 8;
 fn get_origin(origin: usize) -> &'static AccountId {
-    &INTERESTING_ACCOUNTS[origin % NUM_VALID_ORIGINS]
+    &VALID_ORIGINS[origin % VALID_ORIGINS.len()]
 }
 
 lazy_static::lazy_static! {
     static ref ALICE: AccountId = INTERESTING_ACCOUNTS[4].clone();
-    // The first NUM_VALID_ORIGINS from this list will be valid transaction origins
-    static ref INTERESTING_ACCOUNTS: Vec<AccountId> = {
+    static ref VALID_ORIGINS: Vec<AccountId> = {
         let endowed_accounts: Vec<AccountId> = (0..4).map(|i| [i; 32].into()).collect();
         let invulnerables = vec![
                 "Alice".to_string(),
@@ -338,15 +427,19 @@ lazy_static::lazy_static! {
                 "Dave".to_string(),
         ];
         let invulnerables = invulnerables_from_seeds(invulnerables.iter());
+
+        endowed_accounts.into_iter().chain(
+            invulnerables.into_iter().map(|x| x.0)
+        ).collect()
+    };
+    static ref INTERESTING_ACCOUNTS: Vec<AccountId> = {
         let accounts_with_ed = vec![
             dancebox_runtime::StakingAccount::get(),
             dancebox_runtime::ParachainBondAccount::get(),
             dancebox_runtime::PendingRewardsAccount::get(),
         ];
 
-        endowed_accounts.into_iter().chain(
-            invulnerables.into_iter().map(|x| x.0)
-        ).chain(
+        VALID_ORIGINS.iter().cloned().chain(
             accounts_with_ed.into_iter()
         ).collect()
     };
@@ -399,12 +492,19 @@ lazy_static::lazy_static! {
                 .iter()
                 .map(|(para_id, _genesis_data, _boot_nodes)| (*para_id, 1000))
                 .collect();
+            let para_id_boot_nodes: Vec<_> = para_ids
+                .iter()
+                .map(|(para_id, _genesis_data, boot_nodes)| (*para_id, boot_nodes.clone()))
+                .collect();
+            let para_ids: Vec<_> = para_ids
+                .into_iter()
+                .map(|(para_id, genesis_data, _boot_nodes)| (para_id, genesis_data))
+                .collect();
             let accounts_with_ed = vec![
                 dancebox_runtime::StakingAccount::get(),
                 dancebox_runtime::ParachainBondAccount::get(),
                 dancebox_runtime::PendingRewardsAccount::get(),
             ];
-
 
             dancebox_runtime::RuntimeGenesisConfig {
                 system: dancebox_runtime::SystemConfig {
@@ -457,6 +557,7 @@ lazy_static::lazy_static! {
                         ..Default::default()
                 },
                 registrar: dancebox_runtime::RegistrarConfig { para_ids },
+                data_preservers: dancebox_runtime::DataPreserversConfig::default(),
                 services_payment: dancebox_runtime::ServicesPaymentConfig { para_id_credits },
                 sudo: dancebox_runtime::SudoConfig {
                     key: None,
@@ -471,6 +572,7 @@ lazy_static::lazy_static! {
                 // This should initialize it to whatever we have set in the pallet
                 polkadot_xcm: dancebox_runtime::PolkadotXcmConfig::default(),
                 transaction_payment: Default::default(),
+                tx_pause: Default::default(),
             }
             .build_storage()
             .unwrap()
@@ -478,6 +580,47 @@ lazy_static::lazy_static! {
 
         genesis_storage
     };
+
+    static ref METADATA: RuntimeMetadataV15 = {
+        let metadata_bytes = &Runtime::metadata_at_version(15)
+            .expect("Metadata must be present; qed");
+
+        let metadata: RuntimeMetadataPrefixed =
+            Decode::decode(&mut &metadata_bytes[..]).expect("Metadata encoded properly; qed");
+
+        let metadata: RuntimeMetadataV15 = match metadata.1 {
+            RuntimeMetadata::V15(metadata) => metadata,
+            _ => panic!("metadata has been bumped, test needs to be updated"),
+        };
+
+        metadata
+    };
+
+    static ref RUNTIME_API_NAMES: Vec<String> = {
+        let mut v = vec![];
+
+        for api in METADATA.apis.iter() {
+            for method in api.methods.iter() {
+                v.push(format!("{}_{}", api.name, method.name));
+            }
+        }
+
+        v.sort();
+
+        v
+    };
+}
+
+#[derive(Debug, Encode, Decode)]
+enum FuzzRuntimeCall {
+    SetRelayData(Vec<u8>),
+    CallRuntimeApi(Vec<u8>),
+}
+
+#[derive(Debug)]
+enum ExtrOrPseudo {
+    Extr(RuntimeCall),
+    Pseudo(FuzzRuntimeCall),
 }
 
 fn fuzz_main(data: &[u8]) {
@@ -492,17 +635,11 @@ fn fuzz_main(data: &[u8]) {
 
     let mut block_count = 0;
     let mut extrinsics_in_block = 0;
-    let mut mock_relay_bytes: VecDeque<&[u8]> = VecDeque::with_capacity(MAX_BLOCKS_PER_INPUT + 1);
+    let mock_relay_bytes: Cell<Vec<u8>> = Cell::new(vec![]);
 
-    let mut extrinsics: Vec<(Option<u32>, Option<usize>, RuntimeCall)> =
+    let mut extrinsics: Vec<(Option<u32>, usize, ExtrOrPseudo)> =
         Vec::with_capacity(MAX_BLOCKS_PER_INPUT * (MAX_EXTRINSICS_PER_BLOCK + 1));
     let iterable = iteratable.filter_map(|data| {
-        if let Some(data) = data.strip_prefix(b"RELAYCHAIN:") {
-            if mock_relay_bytes.len() <= block_count {
-                mock_relay_bytes.push_back(data);
-            }
-            return None;
-        }
         // We have reached the limit of block we want to decode
         if MAX_BLOCKS_PER_INPUT != 0 && block_count >= MAX_BLOCKS_PER_INPUT {
             return None;
@@ -529,187 +666,23 @@ fn fuzz_main(data: &[u8]) {
             return None;
         }
 
-        // Handle special extrinsics
-        if let Some(data) = encoded_extrinsic.strip_prefix(b"EXTR:") {
-            let mut origin = Some(origin);
-            if data.len() < 1 {
-                return None;
-            }
-            enum SpecialExtr {
-                RootRegistrar,
-                RootAuthorNoting,
-                RootInvulnerables,
-                RootMaintenanceMode,
-                RootConfiguration,
-            }
-            let ex = match data[0] {
-                0 => SpecialExtr::RootRegistrar,
-                1 => SpecialExtr::RootAuthorNoting,
-                2 => SpecialExtr::RootInvulnerables,
-                3 => SpecialExtr::RootMaintenanceMode,
-                4 => SpecialExtr::RootConfiguration,
-                _ => return None,
-            };
-            let mut encoded_extrinsic = &data[1..];
-            match ex {
-                SpecialExtr::RootRegistrar => {
-                    origin = None;
-                    let call_registrar: pallet_registrar::pallet::Call<_> =
-                        match DecodeLimit::decode_with_depth_limit(64, &mut encoded_extrinsic) {
-                            Ok(decoded_extrinsic) => {
-                                if maybe_lapse.is_some() {
-                                    block_count += 1;
-                                    extrinsics_in_block = 1;
-                                } else {
-                                    extrinsics_in_block += 1;
-                                }
-                                // We have reached the limit of block we want to decode
-                                if MAX_BLOCKS_PER_INPUT != 0 && block_count >= MAX_BLOCKS_PER_INPUT
-                                {
-                                    return None;
-                                }
-                                decoded_extrinsic
-                            }
-                            Err(_) => return None,
-                        };
-                    // Allow root to call any pallet_registrar extrinsic, as it is unlikely to brick the chain
-                    // TODO: except register(1000), because that may actually break some things
-                    let extrinsic = RuntimeCall::Registrar(call_registrar);
-                    return Some((maybe_lapse, origin, extrinsic));
-                }
-                SpecialExtr::RootAuthorNoting => {
-                    origin = None;
-                    let call_author_noting: pallet_author_noting::pallet::Call<_> =
-                        match DecodeLimit::decode_with_depth_limit(64, &mut encoded_extrinsic) {
-                            Ok(decoded_extrinsic) => {
-                                if maybe_lapse.is_some() {
-                                    block_count += 1;
-                                    extrinsics_in_block = 1;
-                                } else {
-                                    extrinsics_in_block += 1;
-                                }
-                                // We have reached the limit of block we want to decode
-                                if MAX_BLOCKS_PER_INPUT != 0 && block_count >= MAX_BLOCKS_PER_INPUT
-                                {
-                                    return None;
-                                }
-                                decoded_extrinsic
-                            }
-                            Err(_) => return None,
-                        };
-                    // Allow root to call pallet_author_noting killAuthorData
-                    if let pallet_author_noting::pallet::Call::kill_author_data { .. } =
-                        call_author_noting
-                    {
-                        let extrinsic = RuntimeCall::AuthorNoting(call_author_noting);
-                        return Some((maybe_lapse, origin, extrinsic));
+        if let Some(mut pseudo_extrinsic) = encoded_extrinsic.strip_prefix(b"\xff\xff\xff\xff") {
+            match FuzzRuntimeCall::decode_with_depth_limit(64, &mut pseudo_extrinsic) {
+                Ok(decoded_extrinsic) => {
+                    if maybe_lapse.is_some() {
+                        block_count += 1;
+                        extrinsics_in_block = 1;
+                    } else {
+                        extrinsics_in_block += 1;
                     }
-                }
-                SpecialExtr::RootInvulnerables => {
-                    origin = None;
-                    let mut call_invulnerables: pallet_invulnerables::pallet::Call<_> =
-                        match DecodeLimit::decode_with_depth_limit(64, &mut encoded_extrinsic) {
-                            Ok(decoded_extrinsic) => {
-                                if maybe_lapse.is_some() {
-                                    block_count += 1;
-                                    extrinsics_in_block = 1;
-                                } else {
-                                    extrinsics_in_block += 1;
-                                }
-                                // We have reached the limit of block we want to decode
-                                if MAX_BLOCKS_PER_INPUT != 0 && block_count >= MAX_BLOCKS_PER_INPUT
-                                {
-                                    return None;
-                                }
-                                decoded_extrinsic
-                            }
-                            Err(_) => return None,
-                        };
-                    // Allow root to add any invulnerable
-                    if let pallet_invulnerables::pallet::Call::add_invulnerable { .. } =
-                        call_invulnerables
-                    {
-                        let extrinsic = RuntimeCall::Invulnerables(call_invulnerables);
-                        return Some((maybe_lapse, origin, extrinsic));
-                    }
-                    // Allow root to remove any invulnerable except Alice
-                    match call_invulnerables {
-                        pallet_invulnerables::pallet::Call::remove_invulnerable { ref who }
-                            if *who != *ALICE =>
-                        {
-                            let extrinsic = RuntimeCall::Invulnerables(call_invulnerables);
-                            return Some((maybe_lapse, origin, extrinsic));
-                        }
-                        _ => {}
-                    }
-                    // Allow root to set new invulnerables, but always keep Alice
-                    if let pallet_invulnerables::pallet::Call::set_invulnerables { ref mut new } =
-                        call_invulnerables
-                    {
-                        if !new.contains(&ALICE) {
-                            new.push(ALICE.clone());
-                        }
-                        let extrinsic = RuntimeCall::Invulnerables(call_invulnerables);
-                        return Some((maybe_lapse, origin, extrinsic));
-                    }
-                }
-                SpecialExtr::RootMaintenanceMode => {
-                    origin = None;
-                    let call =
-                        match DecodeLimit::decode_with_depth_limit(64, &mut encoded_extrinsic) {
-                            Ok(decoded_extrinsic) => {
-                                if maybe_lapse.is_some() {
-                                    block_count += 1;
-                                    extrinsics_in_block = 1;
-                                } else {
-                                    extrinsics_in_block += 1;
-                                }
-                                // We have reached the limit of block we want to decode
-                                if MAX_BLOCKS_PER_INPUT != 0 && block_count >= MAX_BLOCKS_PER_INPUT
-                                {
-                                    return None;
-                                }
-                                decoded_extrinsic
-                            }
-                            Err(_) => return None,
-                        };
-                    // Allow root to start and stop maintenance mode
-                    let extrinsic = RuntimeCall::MaintenanceMode(call);
-                    return Some((maybe_lapse, origin, extrinsic));
-                }
-                SpecialExtr::RootConfiguration => {
-                    origin = None;
-                    let call =
-                        match DecodeLimit::decode_with_depth_limit(64, &mut encoded_extrinsic) {
-                            Ok(decoded_extrinsic) => {
-                                if maybe_lapse.is_some() {
-                                    block_count += 1;
-                                    extrinsics_in_block = 1;
-                                } else {
-                                    extrinsics_in_block += 1;
-                                }
-                                // We have reached the limit of block we want to decode
-                                if MAX_BLOCKS_PER_INPUT != 0 && block_count >= MAX_BLOCKS_PER_INPUT
-                                {
-                                    return None;
-                                }
-                                decoded_extrinsic
-                            }
-                            Err(_) => return None,
-                        };
-                    // Allow root to change configuration, except using set_bypass_consistency_check
-                    if let pallet_configuration::pallet::Call::set_bypass_consistency_check {
-                        ..
-                    } = call
-                    {
+                    // We have reached the limit of block we want to decode
+                    if MAX_BLOCKS_PER_INPUT != 0 && block_count >= MAX_BLOCKS_PER_INPUT {
                         return None;
                     }
-                    let extrinsic = RuntimeCall::Configuration(call);
-                    return Some((maybe_lapse, origin, extrinsic));
+                    return Some((maybe_lapse, origin, ExtrOrPseudo::Pseudo(decoded_extrinsic)));
                 }
+                Err(_) => return None,
             }
-
-            return None;
         }
 
         match DecodeLimit::decode_with_depth_limit(64, &mut encoded_extrinsic) {
@@ -724,7 +697,7 @@ fn fuzz_main(data: &[u8]) {
                 if MAX_BLOCKS_PER_INPUT != 0 && block_count >= MAX_BLOCKS_PER_INPUT {
                     return None;
                 }
-                Some((maybe_lapse, Some(origin), decoded_extrinsic))
+                Some((maybe_lapse, origin, ExtrOrPseudo::Extr(decoded_extrinsic)))
             }
             Err(_) => None,
         }
@@ -744,7 +717,7 @@ fn fuzz_main(data: &[u8]) {
     //let mut already_seen = 0; // This must be uncommented if you want to print events
     let mut elapsed: Duration = Duration::ZERO;
 
-    let mut start_block = |block: u32, current_timestamp: u64| {
+    let start_block = |block: u32, current_timestamp: u64| {
         #[cfg(not(fuzzing))]
         println!("\ninitializing block {block}");
 
@@ -818,8 +791,11 @@ fn fuzz_main(data: &[u8]) {
                 .unwrap_or_default()
             };
 
+            // Take value of `mock_relay_bytes`, it will only be used for this block and set to [] afterwards,
+            // unless the next block also sets a custom relay data
+            let mock_relay_bytes_l = mock_relay_bytes.take();
             let relay_iterable = RelayData {
-                data: mock_relay_bytes.pop_front().unwrap_or_default(),
+                data: &mock_relay_bytes_l,
                 pointer: 0,
                 size: 0,
             };
@@ -830,36 +806,25 @@ fn fuzz_main(data: &[u8]) {
             let mut remove_current_block_randomness = false;
 
             // Create a random relay key from this predefined set
-            #[derive(Debug)]
-            enum RelayKey {
-                DownwardMessages,
-                HorizontalMessages,
-                ParasHeads,
+            #[derive(Encode, Decode)]
+            enum FuzzRelayKey {
+                DownwardMessages(Vec<u8>),
+                HorizontalMessages(Vec<u8>),
+                ParasHeads { known_para_id: u8, data: Vec<u8> },
                 RemoveCurrentBlockRandomness,
             }
 
-            for bytes in relay_iterable {
-                if bytes.len() < 1 {
-                    continue;
-                }
-
-                let key = match bytes[0] {
-                    0 => RelayKey::DownwardMessages,
-                    1 => RelayKey::HorizontalMessages,
-                    2 => RelayKey::ParasHeads,
-                    3 => RelayKey::RemoveCurrentBlockRandomness,
-                    _ => {
-                        continue;
-                    }
+            for mut bytes in relay_iterable {
+                let relay_key = match FuzzRelayKey::decode_with_depth_limit(64, &mut bytes) {
+                    Ok(x) => x,
+                    Err(_) => continue,
                 };
 
-                let bytes = &bytes[1..];
-
-                match key {
-                    RelayKey::DownwardMessages => {
-                        raw_downward_messages.push(bytes.to_vec());
+                match relay_key {
+                    FuzzRelayKey::DownwardMessages(data) => {
+                        raw_downward_messages.push(data);
                     }
-                    RelayKey::HorizontalMessages => {
+                    FuzzRelayKey::HorizontalMessages(_data) => {
                         // Disabled because we hit debug_asserts:
                         // thread '<unnamed>' panicked at /home/tomasz/.cargo/git/checkouts/polkadot-sdk-df3be1d6828443a1/b3aad07/cumulus/pallets/xcmp-queue/src/lib.rs:970:21:
                         // Unknown XCMP message format. Silently dropping message
@@ -873,14 +838,13 @@ fn fuzz_main(data: &[u8]) {
                         raw_horizontal_messages.push((para_id.into(), value));
                         */
                     }
-                    RelayKey::ParasHeads => {
-                        // 1 bytes known para id
-                        if bytes.len() < 1 {
-                            continue;
-                        }
-                        let para_id_val = bytes[0];
-                        let mut bytes = &bytes[1..];
+                    FuzzRelayKey::ParasHeads {
+                        known_para_id,
+                        data,
+                    } => {
+                        let para_id_val = known_para_id;
                         let mut para_id = INTERESTING_PARA_IDS.get(para_id_val as usize).copied();
+                        let mut bytes = &data[..];
                         if para_id.is_none() {
                             // Random para id
                             if bytes.len() < 4 {
@@ -920,13 +884,13 @@ fn fuzz_main(data: &[u8]) {
                         additional_key_values.push((key.to_vec(), value.to_vec()));
                     }
                     */
-                    RelayKey::RemoveCurrentBlockRandomness => {
+                    FuzzRelayKey::RemoveCurrentBlockRandomness => {
                         remove_current_block_randomness = true;
                     }
                 }
             }
 
-            // Add randomness until explicitly removed
+            // Add randomness unless explicitly removed
             if !remove_current_block_randomness {
                 let key =
                     cumulus_primitives_core::relay_chain::well_known_keys::CURRENT_BLOCK_RANDOMNESS;
@@ -935,7 +899,7 @@ fn fuzz_main(data: &[u8]) {
                 value[0..4].copy_from_slice(&block.to_le_bytes());
                 // Avoid case of randomness 000000
                 value[31] |= 1;
-                additional_key_values.push((key.to_vec(), value.to_vec()));
+                additional_key_values.push((key.to_vec(), Some(value).encode()));
             }
 
             let mocked_parachain = MockValidationDataInherentDataProvider {
@@ -1015,6 +979,8 @@ fn fuzz_main(data: &[u8]) {
         println!("  finalizing block {current_block}");
         Executive::finalize_block();
 
+        // Per block try-state disabled for performance, we only check it once at the end
+        /*
         #[cfg(not(fuzzing))]
         println!("  testing invariants for block {current_block}");
         <AllPalletsWithSystem as TryState<BlockNumber>>::try_state(
@@ -1022,13 +988,17 @@ fn fuzz_main(data: &[u8]) {
             TryStateSelect::All,
         )
         .unwrap();
+        */
     };
 
     externalities.execute_with(|| start_block(current_block, current_timestamp));
 
+    //println!("extrinsics {:?}", extrinsics);
+
     for (maybe_lapse, origin, extrinsic) in extrinsics {
         // If the lapse is in the range [0, MAX_BLOCK_LAPSE] we finalize the block and initialize
         // a new one.
+        // TODO: what if lapse is 0, isn't that invalid state?
         if let Some(lapse) = maybe_lapse {
             // We end the current block
             externalities.execute_with(|| end_block(current_block, current_timestamp));
@@ -1042,6 +1012,105 @@ fn fuzz_main(data: &[u8]) {
             // We start the next block
             externalities.execute_with(|| start_block(current_block, current_timestamp));
         }
+
+        let extrinsic = match extrinsic {
+            ExtrOrPseudo::Extr(extrinsic) => extrinsic,
+            ExtrOrPseudo::Pseudo(fuzz_call) => {
+                match fuzz_call {
+                    // Set relay data and start a new block
+                    FuzzRuntimeCall::SetRelayData(x) => {
+                        mock_relay_bytes.set(x);
+
+                        let lapse = 1;
+                        // We end the current block
+                        externalities.execute_with(|| end_block(current_block, current_timestamp));
+
+                        // We update our state variables
+                        current_block += lapse;
+                        current_timestamp += lapse as u64 * SLOT_DURATION;
+                        current_weight = Weight::zero();
+                        elapsed = Duration::ZERO;
+
+                        // We start the next block
+                        externalities
+                            .execute_with(|| start_block(current_block, current_timestamp));
+                    }
+                    FuzzRuntimeCall::CallRuntimeApi(x) => {
+                        if x.len() < 4 {
+                            continue;
+                        }
+                        let method_idx: u32 = u32::from_le_bytes(x[0..4].try_into().unwrap());
+                        let raw_data: &[u8] = &x[4..];
+                        let method = match RUNTIME_API_NAMES.get(method_idx as usize) {
+                            Some(x) => x,
+                            None => continue,
+                        };
+
+                        /*
+                        // Method must be a string, so use \0 as separator
+                        let split_index = x.iter().position(|x| *x == 0);
+                        let (method, raw_data) = match split_index {
+                            Some(index) => ( &x[..index], &x[index + 1..] ),
+                            None => ( &x[..], &[][..] ),
+                        };
+                        let method = match std::str::from_utf8(method) {
+                            Ok(x) => x,
+                            Err(_e) => continue,
+                        };
+                        */
+                        // Ignore panics because `dancebox_runtime::api::dispatch` panics on
+                        // invalid input, and we have no easy way to validate the input here.
+                        let panic_hook = std::panic::take_hook();
+                        std::panic::set_hook(Box::new(|_| {}));
+                        let res = std::panic::catch_unwind(|| {
+                            // TODO: this should be run using externalities, right?
+                            //externalities
+                            //    .execute_with(||
+                            dancebox_runtime::api::dispatch(method, raw_data)
+                        });
+                        std::panic::set_hook(panic_hook);
+
+                        match res {
+                            Ok(res) => {
+                                // None means RuntimeApi not found, Some(x) means it worked, and x is the
+                                // encoded result of the RuntimeApi.
+                                // We know the RuntimeApi exists because we are reading the method from
+                                // metadata, so assert that it is not None.
+                                assert_ne!(res, None);
+                            }
+                            Err(e) => {
+                                fn error_msg_starts_with(
+                                    e: &(dyn std::any::Any + Send),
+                                    start: &str,
+                                ) -> bool {
+                                    if let Some(s) = e.downcast_ref::<String>() {
+                                        s.starts_with(start)
+                                    } else if let Some(s) = e.downcast_ref::<&'static str>() {
+                                        s.starts_with(start)
+                                    } else {
+                                        false
+                                    }
+                                }
+                                if error_msg_starts_with(&*e, "Bad input data provided to ") {
+                                    // Ignore, we simply provided invalid input for the RuntimeApi
+                                } else {
+                                    // resume_unwind does not print the panic message
+                                    //std::panic::resume_unwind(e);
+                                    if let Some(s) = e.downcast_ref::<String>() {
+                                        panic!("{}", s);
+                                    } else if let Some(s) = e.downcast_ref::<&'static str>() {
+                                        panic!("{}", s);
+                                    } else {
+                                        panic!("panic_any");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+        };
 
         // We get the current time for timing purposes.
         let now = Instant::now();
@@ -1060,9 +1129,15 @@ fn fuzz_main(data: &[u8]) {
         }
 
         externalities.execute_with(|| {
-            let origin = match origin {
-                Some(origin) => RuntimeOrigin::signed(get_origin(origin).clone()),
-                None => RuntimeOrigin::root(),
+            let origin = if origin == 0 {
+                // Check if this extrinsic can be called by root, if not return a Signed origin
+                if root_can_call(&extrinsic) {
+                    RuntimeOrigin::root()
+                } else {
+                    RuntimeOrigin::signed(get_origin(origin).clone())
+                }
+            } else {
+                RuntimeOrigin::signed(get_origin(origin).clone())
             };
             #[cfg(not(fuzzing))]
             {
@@ -1124,6 +1199,14 @@ fn fuzz_main(data: &[u8]) {
         if total_issuance != counted_issuance {
             panic!("Inconsistent total issuance: {total_issuance} but counted {counted_issuance}");
         }
+
+        #[cfg(not(fuzzing))]
+        println!("  testing invariants for block {current_block}");
+        <AllPalletsWithSystem as TryState<BlockNumber>>::try_state(
+            current_block,
+            TryStateSelect::All,
+        )
+        .unwrap();
 
         #[cfg(not(fuzzing))]
         println!("\nrunning integrity tests\n");

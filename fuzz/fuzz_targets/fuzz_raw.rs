@@ -1,4 +1,6 @@
 #![no_main]
+#![allow(clippy::absurd_extreme_comparisons)]
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 //! Tanssi Runtime fuzz target. Generates random extrinsics and some mock relay validation data (but no sudo).
 //!
@@ -906,7 +908,7 @@ fn fuzz_main(data: &[u8]) {
         // Calls that need to be called before each block starts (init_calls) go here
     };
 
-    let end_block = |_current_block: u32, _current_timestamp: u64| {
+    let end_block = |current_block: u32, _current_timestamp: u64| {
         #[cfg(not(fuzzing))]
         println!("  finalizing block {current_block}");
         Executive::finalize_block();

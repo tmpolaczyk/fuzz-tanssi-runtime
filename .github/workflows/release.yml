@@ -174,13 +174,19 @@ jobs:
                 sudo apt-get update
                 sudo apt-get install -y protobuf-compiler
             - name: Install cargo-fuzz
-              run: cargo install cargo-fuzz --git https://github.com/rust-fuzz/cargo-fuzz
+              # Use custom version from github because the latest release is too old
+              run: cargo install cargo-fuzz --git https://github.com/rust-fuzz/cargo-fuzz --rev a860fd92bc183f1fed45583aa78691b684e80576
             - name: Build
               run: |
                 cd fuzz
                 cargo fuzz build fuzz_raw --build-std
+                strip target/x86_64-unknown-linux-gnu/release/fuzz_raw
                 cargo fuzz build fuzz_flashbox_raw --build-std
+                strip target/x86_64-unknown-linux-gnu/release/fuzz_flashbox_raw
                 cd -
+                mkdir binaries
+                mv fuzz/target/x86_64-unknown-linux-gnu/release/fuzz_raw binaries/
+                mv fuzz/target/x86_64-unknown-linux-gnu/release/fuzz_flashbox_raw binaries/
             - name: Upload binary
               uses: actions/upload-artifact@v3.1.2
               with:
