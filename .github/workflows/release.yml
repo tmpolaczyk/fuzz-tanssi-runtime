@@ -102,6 +102,11 @@ jobs:
                 git clone --depth 1 https://github.com/moondance-labs/tanssi
                 cd -
 
+            - name: Install protoc
+              run: |
+                sudo apt-get update
+                sudo apt-get install -y protobuf-compiler
+
             - name: Clippy
               run: |
                 cd fuzz
@@ -157,35 +162,30 @@ jobs:
                   curl -L --retry 10 --silent --show-error https://github.com/rui314/mold/releases/download/v1.1.1/mold-1.1.1-$(uname -m)-linux.tar.gz | tar -C $(realpath mold) --strip-components=1 -xzf -
             - name: Setup Rust toolchain
               run: rustup show
+            - name: Checkout tanssi repo
+              run: |
+                cd ..
+                git clone --depth 1 https://github.com/moondance-labs/tanssi
+                cd -
             - name: Formatter
               run: cargo fmt --all --check
+            - name: Install protoc
+              run: |
+                sudo apt-get update
+                sudo apt-get install -y protobuf-compiler
+            - name: Install cargo-fuzz
+              run: cargo install cargo-fuzz --git https://github.com/rust-fuzz/cargo-fuzz
             - name: Build
-              run: cargo build --release --all
-            - name: Save runtime wasm
               run: |
-                  mkdir -p runtimes
-                  cp $CARGO_TARGET_DIR/release/wbuild/container-chain-template-simple-runtime/container_chain_template_simple_runtime.compact.wasm runtimes/;
-                  cp $CARGO_TARGET_DIR/release/wbuild/container-chain-template-frontier-runtime/container_chain_template_frontier_runtime.compact.wasm runtimes/;
-                  cp $CARGO_TARGET_DIR/release/wbuild/dancebox-runtime/dancebox_runtime.compact.compressed.wasm runtimes/;
-                  cp $CARGO_TARGET_DIR/release/wbuild/flashbox-runtime/flashbox_runtime.compact.compressed.wasm runtimes/;
-            - name: Upload runtimes
-              uses: actions/upload-artifact@v3.1.2
-              with:
-                  name: runtimes
-                  path: runtimes
-            - name: Save tanssi and template binaries
-              run: |
-                  mkdir -p binaries
-                  cp $CARGO_TARGET_DIR/release/tanssi-node binaries/tanssi-node;
-                  cp $CARGO_TARGET_DIR/release/container-chain-template-simple-node binaries/container-chain-template-simple-node;
-                  cp $CARGO_TARGET_DIR/release/container-chain-template-frontier-node binaries/container-chain-template-frontier-node;
+                cd fuzz
+                cargo fuzz build fuzz_raw --build-std
+                cargo fuzz build fuzz_flashbox_raw --build-std
+                cd -
             - name: Upload binary
               uses: actions/upload-artifact@v3.1.2
               with:
                   name: binaries
                   path: binaries
-            - name: Check runtime benchmarks
-              run: cargo check --features=runtime-benchmarks --release --all
 
     docker-tanssi:
         runs-on: ubuntu-latest
