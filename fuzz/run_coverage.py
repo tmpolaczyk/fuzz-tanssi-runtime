@@ -40,7 +40,7 @@ def write_coverage_target(target_name, file1, file2, output_file):
     with open(file2, 'r') as f:
         file2_contents = f.readlines()
 
-    file2_contents_cleaned = ["\n// fuzz_raw.rs"]
+    file2_contents_cleaned = [f"\n// {target_name}.rs"]
     for line in file2_contents:
         stripped_line = line.strip()
         if stripped_line.startswith("libfuzzer_sys::fuzz_target!"):
