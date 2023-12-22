@@ -96,6 +96,12 @@ jobs:
             - name: Setup Rust toolchain
               run: rustup show
 
+            - name: Checkout tanssi repo
+              run: |
+                cd ..
+                git clone --depth 1 https://github.com/moondance-labs/tanssi
+                cd -
+
             - name: Clippy
               run: |
                 cd fuzz
@@ -154,7 +160,7 @@ jobs:
             - name: Formatter
               run: cargo fmt --all --check
             - name: Build
-              run: cargo build --features=fast-runtime --release --all
+              run: cargo build --release --all
             - name: Save runtime wasm
               run: |
                   mkdir -p runtimes
