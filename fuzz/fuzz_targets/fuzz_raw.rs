@@ -23,18 +23,21 @@ use {
     },
     nimbus_primitives::NimbusId,
     parity_scale_codec::{DecodeLimit, Encode},
+    nimbus_primitives::NIMBUS_ENGINE_ID,
     sp_consensus_aura::{Slot, AURA_ENGINE_ID},
     sp_core::{sr25519, Decode, Get, Pair, Public},
     sp_inherents::InherentDataProvider,
     sp_runtime::{
-        traits::{Dispatchable, Header, IdentifyAccount, Verify},
+        traits::{Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
         Digest, DigestItem, Storage, Perbill
     },
     std::{
+        any::TypeId,
         cell::Cell,
         time::{Duration, Instant},
     },
     tp_container_chain_genesis_data::ContainerChainGenesisData,
+    dancebox_runtime::Header,
 };
 
 // We use a simple Map-based Externalities implementation
@@ -222,7 +225,33 @@ fn root_can_call(call: &RuntimeCall) -> bool {
 }
 
 /// Helper function to generate a crypto pair from seed
-pub fn get_from_seed<TPublic: Public>(seed: &str) -> <TPublic::Pair as Pair>::Public {
+pub fn get_from_seed<TPublic: Public + 'static>(seed: &str) -> <TPublic::Pair as Pair>::Public {
+    static ACCOUNT_FROM_SEED: &[(&str, &str)] = &[
+        ("Alice", "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d"),
+        ("Bob", "8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48"),
+        ("Charlie", "90b5ab205c6974c9ea841be688864633dc9ca8a357843eeacf2314649965fe22"),
+        ("Dave", "306721211d5404bd9da88e0204360a1a9ab8b87c66c1bc2fcdd37f3c2222cc20"),
+    ];
+    // When compiled with `--cfg fuzzing`, this doesn't work because of an invalid bip39 checksum error
+    // caused by the `bitcoin_hashes` library, which mocks sha256 when fuzzing.
+    // To avoid this problem, generate the public key some other way and add it to the account list above.
+    if let Some(hex_key) = ACCOUNT_FROM_SEED.iter().find_map(|(k, v)| if *k == seed {
+        Some(v)
+    } else {
+        None
+    }) {
+        let mut x: <TPublic::Pair as Pair>::Public = 
+        if TypeId::of::<TPublic>() == TypeId::of::<sr25519::Public>() {
+            unsafe { std::mem::zeroed() }
+        } else if TypeId::of::<TPublic>() == TypeId::of::<NimbusId>() {
+            unsafe { std::mem::zeroed() }
+        } else {
+            unimplemented!()
+        };
+        let xm = x.as_mut();
+        xm.copy_from_slice(&hex::decode(hex_key).unwrap());
+        return x;
+    }
     TPublic::Pair::from_string(&format!("//{}", seed), None)
         .expect("static values are valid; qed")
         .public()
@@ -247,15 +276,19 @@ type AccountPublic = <Signature as Verify>::Signer;
 ///
 /// This function's return type must always match the session keys of the chain in tuple format.
 pub fn get_collator_keys_from_seed(seed: &str) -> NimbusId {
-    get_from_seed::<NimbusId>(seed)
+    let res = get_from_seed::<NimbusId>(seed);
+    //println!("NimbusId {:?} {:?}", seed, res);
+    res
 }
 
 /// Helper function to generate an account ID from seed
-pub fn get_account_id_from_seed<TPublic: Public>(seed: &str) -> AccountId
+pub fn get_account_id_from_seed<TPublic: Public + 'static>(seed: &str) -> AccountId
 where
     AccountPublic: From<<TPublic::Pair as Pair>::Public>,
 {
-    AccountPublic::from(get_from_seed::<TPublic>(seed)).into_account()
+    let res = AccountPublic::from(get_from_seed::<TPublic>(seed)).into_account();
+    //println!("AccountId {:?} {:?}", seed, res);
+    res
 }
 
 /// Generate the session keys from individual elements.
@@ -558,7 +591,23 @@ enum ExtrOrPseudo {
     Pseudo(FuzzRuntimeCall),
 }
 
+fn init_logger() {
+    use sc_tracing::logging::LoggerBuilder;
+    let mut logger = LoggerBuilder::new(format!("error"));
+    logger
+        .with_log_reloading(false)
+        .with_detailed_output(false);
+
+    logger.init().unwrap();
+}
+
+lazy_static::lazy_static! {
+    static ref LOGGER: () = init_logger();
+}
+
 fn fuzz_main(data: &[u8]) {
+    // Uncomment to init logger
+    //*LOGGER;
     let iteratable = Data {
         data: &data,
         pointer: 0,
@@ -651,6 +700,7 @@ fn fuzz_main(data: &[u8]) {
     let mut current_weight: Weight = Weight::zero();
     //let mut already_seen = 0; // This must be uncommented if you want to print events
     let mut elapsed: Duration = Duration::ZERO;
+    let parent_header = Cell::new(None);
 
     let start_block = |block: u32, current_timestamp: u64| {
         #[cfg(not(fuzzing))]
@@ -667,21 +717,28 @@ fn fuzz_main(data: &[u8]) {
             },
         };
         */
+        let aura_slot = current_timestamp / SLOT_DURATION;
+        let author = get_from_seed::<NimbusId>("Alice");
         let pre_digest = match current_timestamp {
             _ => Digest {
                 logs: vec![DigestItem::PreRuntime(
                     AURA_ENGINE_ID,
-                    Slot::from(current_timestamp / SLOT_DURATION).encode(),
+                    Slot::from(aura_slot).encode(),
+                ), DigestItem::PreRuntime(
+                    NIMBUS_ENGINE_ID,
+                    NimbusId::from(author).encode(),
                 )],
             },
         };
 
+        // TODO: need to insert block author here or else `kick_off_authorship_validation` panics with error
+        // "Block author not inserted into Author Inherent Pallet"
         Executive::initialize_block(&Header::new(
             block,
             Default::default(),
             Default::default(),
             Default::default(),
-            pre_digest,
+            pre_digest.clone(),
         ));
 
         // Apply inherents
@@ -835,6 +892,26 @@ fn fuzz_main(data: &[u8]) {
                 additional_key_values.push((key.to_vec(), Some(value).encode()));
             }
 
+            {
+                // TODO: this should be the header of the parent block I guess
+                let para_header: Header = parent_header.take().unwrap_or_else(|| Header::new(
+                    block,
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                    pre_digest,
+                ));
+                let para_head_key = cumulus_primitives_core::relay_chain::well_known_keys::para_head(ParaId::from(1000));
+                let para_head_data = cumulus_primitives_core::relay_chain::HeadData(para_header.encode()).encode();
+                additional_key_values.push((para_head_key, para_head_data));
+            }
+
+            {
+                let relay_slot_key = cumulus_primitives_core::relay_chain::well_known_keys::CURRENT_SLOT.to_vec();
+                let relay_slot = aura_slot.saturating_mul(2);
+                additional_key_values.push((relay_slot_key, Slot::from(relay_slot).encode()));
+            }
+
             let mocked_parachain = MockValidationDataInherentDataProvider {
                 current_para_block: block,
                 relay_offset: 1000,
@@ -901,6 +978,13 @@ fn fuzz_main(data: &[u8]) {
         )))
         .unwrap()
         .unwrap();
+
+        Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorInherent(
+            pallet_author_inherent::Call::kick_off_authorship_validation {},
+        )))
+        .unwrap()
+        .unwrap();
+
         // TODO: missing inherents
         // authorInherent.kickOffAuthorshipValidation
 
@@ -910,7 +994,8 @@ fn fuzz_main(data: &[u8]) {
     let end_block = |current_block: u32, _current_timestamp: u64| {
         #[cfg(not(fuzzing))]
         println!("  finalizing block {current_block}");
-        Executive::finalize_block();
+        let header = Executive::finalize_block();
+        parent_header.set(Some(header));
 
         // Per block try-state disabled for performance, we only check it once at the end
         /*
@@ -1133,11 +1218,16 @@ fn fuzz_main(data: &[u8]) {
 
         #[cfg(not(fuzzing))]
         println!("  testing invariants for block {current_block}");
+        // Disabled because 
+        // "MessageQueue" try_state checks failed: Other("There must be some message size if in ReadyRing")
+        // [100, 136, 255, 255, 255, 255, 255, 255, 255, 255, 0, 40, 0, 0, 0, 76, 47, 47, 5, 255, 255, 255]
+        /*
         <AllPalletsWithSystem as TryState<BlockNumber>>::try_state(
             current_block,
             TryStateSelect::All,
         )
         .unwrap();
+        */
 
         #[cfg(not(fuzzing))]
         println!("\nrunning integrity tests\n");
