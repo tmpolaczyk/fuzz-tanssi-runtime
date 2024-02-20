@@ -487,10 +487,10 @@ lazy_static::lazy_static! {
                         .map(|x| (*x, mock_container_chain_genesis_data(*x), vec![])),
                 )
                 .collect();
-            // Assign 1000 block credits to all container chains registered in genesis
+            // Assign 1000 block credits and 100 session credits to all container chains registered in genesis
             let para_id_credits: Vec<_> = para_ids
                 .iter()
-                .map(|(para_id, _genesis_data, _boot_nodes)| (*para_id, 1000))
+                .map(|(para_id, _genesis_data, _boot_nodes)| (*para_id, 1000, 100).into())
                 .collect();
             let para_id_boot_nodes: Vec<_> = para_ids
                 .iter()

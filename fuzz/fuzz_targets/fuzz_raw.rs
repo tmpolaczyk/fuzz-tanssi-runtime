@@ -28,7 +28,7 @@ use {
     sp_inherents::InherentDataProvider,
     sp_runtime::{
         traits::{Dispatchable, Header, IdentifyAccount, Verify},
-        Digest, DigestItem, Storage,
+        Digest, DigestItem, Storage, Perbill
     },
     std::{
         cell::Cell,
@@ -421,10 +421,10 @@ lazy_static::lazy_static! {
                         .map(|x| (*x, mock_container_chain_genesis_data(*x), vec![])),
                 )
                 .collect();
-            // Assign 1000 block credits to all container chains registered in genesis
+            // Assign 1000 block credits and 100 session credits to all container chains registered in genesis
             let para_id_credits: Vec<_> = para_ids
                 .iter()
-                .map(|(para_id, _genesis_data, _boot_nodes)| (*para_id, 1000))
+                .map(|(para_id, _genesis_data, _boot_nodes)| (*para_id, 1000, 100).into())
                 .collect();
             let para_id_boot_nodes: Vec<_> = para_ids
                 .iter()
@@ -442,9 +442,6 @@ lazy_static::lazy_static! {
 
             dancebox_runtime::RuntimeGenesisConfig {
                 system: dancebox_runtime::SystemConfig {
-                    code: dancebox_runtime::WASM_BINARY
-                        .expect("WASM binary was not build, please build it!")
-                        .to_vec(),
                     ..Default::default()
                 },
                 balances: dancebox_runtime::BalancesConfig {
@@ -487,6 +484,9 @@ lazy_static::lazy_static! {
                             max_orchestrator_collators: 1u32,
                             collators_per_container: 2u32,
                             full_rotation_period: prod_or_fast!(24u32, 5u32),
+                            collators_per_parathread: 1,
+                            parathreads_per_collator: 1,
+                            target_container_chain_fullness: Perbill::from_percent(80),
                         },
                         ..Default::default()
                 },
@@ -507,6 +507,7 @@ lazy_static::lazy_static! {
                 polkadot_xcm: dancebox_runtime::PolkadotXcmConfig::default(),
                 transaction_payment: Default::default(),
                 tx_pause: Default::default(),
+                treasury: Default::default(),
             }
             .build_storage()
             .unwrap()
@@ -695,9 +696,7 @@ fn fuzz_main(data: &[u8]) {
             // Use MockValidationDataInherentDataProvider
             // Read inherent data and decode it
             use {
-                cumulus_primitives_parachain_inherent::{
-                    MockValidationDataInherentDataProvider, MockXcmConfig,
-                },
+                cumulus_client_parachain_inherent::{MockValidationDataInherentDataProvider, MockXcmConfig},
                 futures::executor::block_on,
             };
 
@@ -996,12 +995,10 @@ fn fuzz_main(data: &[u8]) {
                         // invalid input, and we have no easy way to validate the input here.
                         let panic_hook = std::panic::take_hook();
                         std::panic::set_hook(Box::new(|_| {}));
-                        let res = std::panic::catch_unwind(|| {
-                            // TODO: this should be run using externalities, right?
-                            //externalities
-                            //    .execute_with(||
-                            dancebox_runtime::api::dispatch(method, raw_data)
-                        });
+                        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            externalities
+                                .execute_with(|| dancebox_runtime::api::dispatch(method, raw_data))
+                        }));
                         std::panic::set_hook(panic_hook);
 
                         match res {
