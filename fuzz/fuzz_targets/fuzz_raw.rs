@@ -421,7 +421,7 @@ lazy_static::lazy_static! {
     };
 
     static ref GENESIS_STORAGE: Storage = {
-        let endowed_accounts: Vec<AccountId> = (0..4).map(|i| [i; 32].into()).collect();
+        let mut endowed_accounts: Vec<AccountId> = (0..4).map(|i| [i; 32].into()).collect();
 
         let genesis_storage: Storage = {
             use sp_runtime::BuildStorage;
@@ -438,6 +438,7 @@ lazy_static::lazy_static! {
                     "Dave".to_string(),
             ];
             let invulnerables = invulnerables_from_seeds(invulnerables.iter());
+            endowed_accounts.extend(invulnerables.iter().map(|x| x.0.clone()));
             let para_ids: Vec<_> = container_chains
                 .iter()
                 .map(|x| {
@@ -608,6 +609,7 @@ lazy_static::lazy_static! {
 fn fuzz_main(data: &[u8]) {
     // Uncomment to init logger
     //*LOGGER;
+    //println!("data: {:?}", data);
     let iteratable = Data {
         data: &data,
         pointer: 0,
@@ -687,6 +689,8 @@ fn fuzz_main(data: &[u8]) {
         }
     });
     extrinsics.extend(iterable);
+
+    //println!("{:?}", extrinsics);
 
     if extrinsics.is_empty() {
         return;
