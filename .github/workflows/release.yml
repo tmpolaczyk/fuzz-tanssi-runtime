@@ -98,11 +98,13 @@ jobs:
 
             - name: Checkout tanssi repo
               run: |
+                PREV_DIR=$(pwd)
                 cd ..
                 #git clone --depth 1 https://github.com/moondance-labs/tanssi
                 git clone https://github.com/moondance-labs/tanssi
+                cd tanssi
                 git checkout origin/fg/polkadot-v1.6.0
-                cd -
+                cd $PREV_DIR
 
             - name: Install protoc
               run: |
@@ -157,11 +159,13 @@ jobs:
               run: rustup show
             - name: Checkout tanssi repo
               run: |
+                PREV_DIR=$(pwd)
                 cd ..
                 #git clone --depth 1 https://github.com/moondance-labs/tanssi
                 git clone https://github.com/moondance-labs/tanssi
+                cd tanssi
                 git checkout origin/fg/polkadot-v1.6.0
-                cd -
+                cd $PREV_DIR
             - name: Formatter
               run: cargo fmt --all --check
             - name: Install protoc
