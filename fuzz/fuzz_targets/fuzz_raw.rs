@@ -700,6 +700,7 @@ fn fuzz_main(data: &[u8]) {
     let mut current_weight: Weight = Weight::zero();
     //let mut already_seen = 0; // This must be uncommented if you want to print events
     let mut elapsed: Duration = Duration::ZERO;
+    let parent_hash = Cell::new(None);
     let parent_header = Cell::new(None);
 
     let start_block = |block: u32, current_timestamp: u64| {
@@ -718,7 +719,36 @@ fn fuzz_main(data: &[u8]) {
         };
         */
         let aura_slot = current_timestamp / SLOT_DURATION;
-        let author = get_from_seed::<NimbusId>("Alice");
+        fn guess_author(slot: usize, block: u32) -> NimbusId {
+            use pallet_session::ShouldEndSession;
+            // Check whether we need to fetch the next authorities or current ones
+            // Cannot use `Runtime::authorities()` here because that would use `parent_block_number + 1`, but that is not the same
+            // as `block` when there are block gaps (lapse > 1).
+            let should_end_session = <Runtime as pallet_session::Config>::ShouldEndSession::should_end_session(block);
+
+            let session_index = if should_end_session {
+                dancebox_runtime::Session::current_index() +1
+            }
+            else {
+                dancebox_runtime::Session::current_index()
+            };
+            let authorities = pallet_authority_assignment::CollatorContainerChain::<Runtime>::get(session_index)
+            .expect("authorities for current session should exist")
+            .orchestrator_chain;
+            
+            if authorities.len() == 0 {
+                panic!("Stalled chain, no authoritiy can author next block");
+            }
+            let author_index = slot % authorities.len();
+            let expected_author = &authorities[author_index];
+
+            //println!("guess_author: slot={}, authorities.len()={}, author={:?}", slot, authorities.len(), expected_author);
+            //println!("guess_author authorities: {:?}", authorities);
+    
+            expected_author.clone()
+        }
+        let author = guess_author(aura_slot as usize, block);
+
         let pre_digest = match current_timestamp {
             _ => Digest {
                 logs: vec![DigestItem::PreRuntime(
@@ -731,13 +761,11 @@ fn fuzz_main(data: &[u8]) {
             },
         };
 
-        // TODO: need to insert block author here or else `kick_off_authorship_validation` panics with error
-        // "Block author not inserted into Author Inherent Pallet"
         Executive::initialize_block(&Header::new(
             block,
             Default::default(),
             Default::default(),
-            Default::default(),
+            parent_hash.take().unwrap_or_default(),
             pre_digest.clone(),
         ));
 
@@ -747,8 +775,6 @@ fn fuzz_main(data: &[u8]) {
             cumulus_primitives_parachain_inherent::ParachainInherentData,
         };
 
-        // TODO: if there is nothing in mock_relay_bytes, it may be faster to just use
-        // RelayStateSproofBuilder::default().into_state_root_and_proof()
         let (vfp, relay_chain_state, downward_messages, horizontal_messages) = {
             // Use MockValidationDataInherentDataProvider
             // Read inherent data and decode it
@@ -893,14 +919,16 @@ fn fuzz_main(data: &[u8]) {
             }
 
             {
-                // TODO: this should be the header of the parent block I guess
-                let para_header: Header = parent_header.take().unwrap_or_else(|| Header::new(
-                    block,
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                    pre_digest,
-                ));
+                let para_header: Header = parent_header.take().unwrap_or_else(|| {
+                    // Header of genesis block
+                    Header::new(
+                        0,
+                        Default::default(),
+                        Default::default(),
+                        Default::default(),
+                        Default::default(),
+                    )
+                });
                 let para_head_key = cumulus_primitives_core::relay_chain::well_known_keys::para_head(ParaId::from(1000));
                 let para_head_data = cumulus_primitives_core::relay_chain::HeadData(para_header.encode()).encode();
                 additional_key_values.push((para_head_key, para_head_data));
@@ -995,6 +1023,7 @@ fn fuzz_main(data: &[u8]) {
         #[cfg(not(fuzzing))]
         println!("  finalizing block {current_block}");
         let header = Executive::finalize_block();
+        parent_hash.set(Some(header.hash()));
         parent_header.set(Some(header));
 
         // Per block try-state disabled for performance, we only check it once at the end

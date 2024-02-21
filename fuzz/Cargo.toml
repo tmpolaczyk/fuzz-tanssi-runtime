@@ -32,6 +32,7 @@ dancebox-runtime = { path = "../../tanssi/runtime/dancebox", default-features = 
 flashbox-runtime = { path = "../../tanssi/runtime/flashbox", default-features = false, features = [ "std", "try-runtime" ] }
 lazy_static = "1.4.0"
 libfuzzer-sys = { version = "0.4", features = [ "arbitrary-derive" ] }
+pallet-authority-assignment = { path = "../../tanssi/pallets/authority-assignment", default-features = false }
 pallet-author-noting = { path = "../../tanssi/pallets/author-noting", default-features = false }
 pallet-configuration = { path = "../../tanssi/pallets/configuration", default-features = false }
 pallet-invulnerables = { path = "../../tanssi/pallets/invulnerables", default-features = false }
@@ -52,6 +53,7 @@ frame-system = { git = "https://github.com/moondance-labs/polkadot-sdk.git", bra
 nimbus-primitives = { git = "https://github.com/moondance-labs/moonkit", branch = "tanssi-polkadot-v1.6.0", default-features = false }
 pallet-author-inherent = { git = "https://github.com/moondance-labs/moonkit", branch = "tanssi-polkadot-v1.6.0", default-features = false }
 pallet-balances = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.6.0", default-features = false }
+pallet-session = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.6.0", default-features = false }
 pallet-timestamp = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.6.0", default-features = false }
 pallet-utility = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.6.0", default-features = false }
 parity-scale-codec = { version = "3.0.0", default-features = false, features = [ "derive", "max-encoded-len" ] }
