@@ -99,7 +99,9 @@ jobs:
             - name: Checkout tanssi repo
               run: |
                 cd ..
-                git clone --depth 1 https://github.com/moondance-labs/tanssi
+                #git clone --depth 1 https://github.com/moondance-labs/tanssi
+                git clone https://github.com/moondance-labs/tanssi
+                git checkout origin/fg/polkadot-v1.6.0
                 cd -
 
             - name: Install protoc
