@@ -923,7 +923,7 @@ fn fuzz_main(data: &[u8]) {
             }
 
             {
-                let para_header: Header = parent_header.take().unwrap_or_else(|| {
+                let para_header = parent_header.take().unwrap_or_else(|| {
                     // Header of genesis block
                     Header::new(
                         0,
@@ -1096,6 +1096,14 @@ fn fuzz_main(data: &[u8]) {
                             Some(x) => x,
                             None => continue,
                         };
+
+                        if method == "BlockBuilder_finalize_block" {
+                            // Will panic if no inherents included with message:
+                            // Timestamp must be updated once in the block
+                            continue;
+                        }
+
+                        //println!("Calling runtime api: {}", method);
 
                         /*
                         // Method must be a string, so use \0 as separator
