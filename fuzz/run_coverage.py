@@ -11,7 +11,8 @@ def setup_coverage_target(target_name):
     subprocess.run(
         ["cargo", "fuzz", "add", target_coverage_name],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+        stderr=subprocess.DEVNULL,
+        check=False,
     )
 
 def write_coverage_target(target_name, file1, file2, output_file):
@@ -85,8 +86,14 @@ def build_coverage_binary(target_name):
     """
     env = os.environ.copy()
     env["RUSTFLAGS"] = "--cfg fuzzing --cfg coverage -C opt-level=3 -C target-cpu=native -C instrument-coverage"
+    #env["RUSTFLAGS"] = "--cfg fuzzing --cfg coverage -C opt-level=3 -C target-cpu=native"
+    #env["RUSTFLAGS"] = "--cfg fuzzing --cfg coverage -C opt-level=3"
     env["LLVM_PROFILE_FILE"] = "/dev/null"
-    subprocess.run(["cargo", "build", "--bin", f"{target_name}_coverage"], env=env)
+    #subprocess.run(["cargo", "build", "-Z", "build-std", "--target", "x86_64-unknown-linux-gnu", "--bin", f"{target_name}_coverage"], env=env, check=True)
+    # -Z build-std is not compatible with -C instrument-coverage
+    subprocess.run(["cargo", "build", "--target", "x86_64-unknown-linux-gnu", "--bin", f"{target_name}_coverage"], env=env, check=True)
+    #env["RUSTFLAGS"] = "--cfg fuzzing"
+    #subprocess.run(["cargo", "miri", "run", "--bin", f"{target_name}_coverage"], env=env, check=True)
 
 def execute_coverage_binary(target_name):
     """
@@ -95,8 +102,8 @@ def execute_coverage_binary(target_name):
     try:
         env = os.environ.copy()
         # TODO: use absolute path
-        #env["LLVM_PROFILE_FILE"] = "proffiles/default_%m_%p.profraw"
-        subprocess.run([f"./target/debug/{target_name}_coverage"])
+        env["LLVM_PROFILE_FILE"] = "proffiles/default_%m_%p.profraw"
+        subprocess.run([f"./target/x86_64-unknown-linux-gnu/debug/{target_name}_coverage"], env=env, check=True)
     except Exception as e:
         print(f"Failed to execute '{target_name}_coverage': {e}")
 

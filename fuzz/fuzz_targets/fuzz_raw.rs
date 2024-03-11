@@ -1119,6 +1119,10 @@ fn fuzz_main(data: &[u8]) {
                         */
                         // Ignore panics because `dancebox_runtime::api::dispatch` panics on
                         // invalid input, and we have no easy way to validate the input here.
+                        // TODO: this is not thread safe, but that only matters for the coverage script
+                        // It can be made thread safe by setting a global panic hook before starting the
+                        // main loop, and that panic hook would have methods to disable printing panics
+                        // depending on the thread.
                         let panic_hook = std::panic::take_hook();
                         std::panic::set_hook(Box::new(|_| {}));
                         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

@@ -77,6 +77,8 @@ hex = "0.4.3"
 indicatif = { version = "0.17", features = [ "rayon" ] }
 rayon = "1"
 serde = { version = "1.0.197", default-features = false }
+serde_json = { version = "1", default-features = false }
+include_dir = "0.7.3"
 
 [dependencies.fuzz-tanssi-runtime]
 path = ".."

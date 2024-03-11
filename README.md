@@ -37,8 +37,6 @@ firefox index.html
 ```
 RUSTFLAGS="--cfg fuzzing -C opt-level=3 -C target-cpu=native -C instrument-coverage" cargo run --bin fuzz_raw_coverage
 # rm -rf proffiles/*
-# ls -ltr
-# Manually copy the most recent profraw file to the proffiles folder
 # Then run:
-../../tanssi/grcov proffiles/ -s $HOME --binary-path ./target/debug/             -t html --branch --ignore-not-existing --ignore "target/debug/build/*"             --ignore "*mock.rs" --ignore "*tests.rs"             -o coverage3/ --llvm
+grcov proffiles/ -s $HOME --binary-path ./target/x86_64-unknown-linux-gnu/debug -t html --branch --ignore-not-existing --ignore "target/debug/build/*" --ignore "*mock.rs" --ignore "*tests.rs"             -o coverage3/ --llvm
 ```
