@@ -842,6 +842,12 @@ fn fuzz_main(data: &[u8]) {
 
                 match relay_key {
                     FuzzRelayKey::DownwardMessages(data) => {
+                        if data.len() < 1 {
+                            // Empty input makes try_state check fail in MessageQueue:
+                            // Other("There must be some message size if in ReadyRing")
+                            // [100, 136, 255, 255, 255, 255, 255, 255, 255, 255, 0, 40, 0, 0, 0, 76, 47, 47, 5, 255, 255, 255]
+                            continue;
+                        }
                         raw_downward_messages.push(data);
                     }
                     FuzzRelayKey::HorizontalMessages(_data) => {
@@ -940,7 +946,7 @@ fn fuzz_main(data: &[u8]) {
 
             {
                 let relay_slot_key = cumulus_primitives_core::relay_chain::well_known_keys::CURRENT_SLOT.to_vec();
-                let relay_slot = aura_slot.saturating_mul(2);
+                let relay_slot = aura_slot;
                 additional_key_values.push((relay_slot_key, Slot::from(relay_slot).encode()));
             }
 
@@ -1263,16 +1269,11 @@ fn fuzz_main(data: &[u8]) {
 
         #[cfg(not(fuzzing))]
         println!("  testing invariants for block {current_block}");
-        // Disabled because 
-        // "MessageQueue" try_state checks failed: Other("There must be some message size if in ReadyRing")
-        // [100, 136, 255, 255, 255, 255, 255, 255, 255, 255, 0, 40, 0, 0, 0, 76, 47, 47, 5, 255, 255, 255]
-        /*
         <AllPalletsWithSystem as TryState<BlockNumber>>::try_state(
             current_block,
             TryStateSelect::All,
         )
         .unwrap();
-        */
 
         #[cfg(not(fuzzing))]
         println!("\nrunning integrity tests\n");
