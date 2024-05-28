@@ -28,7 +28,7 @@ use {
     sp_inherents::InherentDataProvider,
     sp_runtime::{
         traits::{Dispatchable, Header, IdentifyAccount, Verify},
-        Digest, DigestItem, Storage, Perbill
+        Digest, DigestItem, Perbill, Storage,
     },
     std::{
         cell::Cell,
@@ -687,7 +687,9 @@ fn fuzz_main(data: &[u8]) {
             // Use MockValidationDataInherentDataProvider
             // Read inherent data and decode it
             use {
-                cumulus_client_parachain_inherent::{MockValidationDataInherentDataProvider, MockXcmConfig},
+                cumulus_client_parachain_inherent::{
+                    MockValidationDataInherentDataProvider, MockXcmConfig,
+                },
                 futures::executor::block_on,
             };
 

@@ -75,7 +75,7 @@ fn main() {
 use {
     cumulus_primitives_core::ParaId,
     dancebox_runtime::{
-        AccountId, AllPalletsWithSystem, BlockNumber, Executive, Runtime, RuntimeCall,
+        AccountId, AllPalletsWithSystem, BlockNumber, Executive, Header, Runtime, RuntimeCall,
         RuntimeOrigin, Signature, UncheckedExtrinsic, SLOT_DURATION,
     },
     dp_core::well_known_keys::PARAS_HEADS_INDEX,
@@ -87,15 +87,14 @@ use {
         weights::constants::WEIGHT_REF_TIME_PER_SECOND,
         Hashable,
     },
-    nimbus_primitives::NimbusId,
+    nimbus_primitives::{NimbusId, NIMBUS_ENGINE_ID},
     parity_scale_codec::{DecodeLimit, Encode},
-    nimbus_primitives::NIMBUS_ENGINE_ID,
     sp_consensus_aura::{Slot, AURA_ENGINE_ID},
     sp_core::{sr25519, Decode, Get, Pair, Public},
     sp_inherents::InherentDataProvider,
     sp_runtime::{
         traits::{Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
-        Digest, DigestItem, Storage, Perbill
+        Digest, DigestItem, Perbill, Storage,
     },
     std::{
         any::TypeId,
@@ -103,7 +102,6 @@ use {
         time::{Duration, Instant},
     },
     tp_container_chain_genesis_data::ContainerChainGenesisData,
-    dancebox_runtime::Header,
 };
 
 // We use a simple Map-based Externalities implementation
@@ -293,27 +291,39 @@ fn root_can_call(call: &RuntimeCall) -> bool {
 /// Helper function to generate a crypto pair from seed
 pub fn get_from_seed<TPublic: Public + 'static>(seed: &str) -> <TPublic::Pair as Pair>::Public {
     static ACCOUNT_FROM_SEED: &[(&str, &str)] = &[
-        ("Alice", "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d"),
-        ("Bob", "8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48"),
-        ("Charlie", "90b5ab205c6974c9ea841be688864633dc9ca8a357843eeacf2314649965fe22"),
-        ("Dave", "306721211d5404bd9da88e0204360a1a9ab8b87c66c1bc2fcdd37f3c2222cc20"),
+        (
+            "Alice",
+            "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
+        ),
+        (
+            "Bob",
+            "8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48",
+        ),
+        (
+            "Charlie",
+            "90b5ab205c6974c9ea841be688864633dc9ca8a357843eeacf2314649965fe22",
+        ),
+        (
+            "Dave",
+            "306721211d5404bd9da88e0204360a1a9ab8b87c66c1bc2fcdd37f3c2222cc20",
+        ),
     ];
     // When compiled with `--cfg fuzzing`, this doesn't work because of an invalid bip39 checksum error
     // caused by the `bitcoin_hashes` library, which mocks sha256 when fuzzing.
     // To avoid this problem, generate the public key some other way and add it to the account list above.
-    if let Some(hex_key) = ACCOUNT_FROM_SEED.iter().find_map(|(k, v)| if *k == seed {
-        Some(v)
-    } else {
-        None
-    }) {
-        let mut x: <TPublic::Pair as Pair>::Public = 
-        if TypeId::of::<TPublic>() == TypeId::of::<sr25519::Public>() {
-            unsafe { std::mem::zeroed() }
-        } else if TypeId::of::<TPublic>() == TypeId::of::<NimbusId>() {
-            unsafe { std::mem::zeroed() }
-        } else {
-            unimplemented!()
-        };
+    if let Some(hex_key) =
+        ACCOUNT_FROM_SEED
+            .iter()
+            .find_map(|(k, v)| if *k == seed { Some(v) } else { None })
+    {
+        let mut x: <TPublic::Pair as Pair>::Public =
+            if TypeId::of::<TPublic>() == TypeId::of::<sr25519::Public>() {
+                unsafe { std::mem::zeroed() }
+            } else if TypeId::of::<TPublic>() == TypeId::of::<NimbusId>() {
+                unsafe { std::mem::zeroed() }
+            } else {
+                unimplemented!()
+            };
         let xm = x.as_mut();
         xm.copy_from_slice(&hex::decode(hex_key).unwrap());
         return x;
@@ -661,9 +671,7 @@ enum ExtrOrPseudo {
 fn init_logger() {
     use sc_tracing::logging::LoggerBuilder;
     let mut logger = LoggerBuilder::new(format!("error"));
-    logger
-        .with_log_reloading(false)
-        .with_detailed_output(false);
+    logger.with_log_reloading(false).with_detailed_output(false);
 
     logger.init().unwrap();
 }
@@ -794,18 +802,19 @@ fn fuzz_main(data: &[u8]) {
             // Check whether we need to fetch the next authorities or current ones
             // Cannot use `Runtime::authorities()` here because that would use `parent_block_number + 1`, but that is not the same
             // as `block` when there are block gaps (lapse > 1).
-            let should_end_session = <Runtime as pallet_session::Config>::ShouldEndSession::should_end_session(block);
+            let should_end_session =
+                <Runtime as pallet_session::Config>::ShouldEndSession::should_end_session(block);
 
             let session_index = if should_end_session {
-                dancebox_runtime::Session::current_index() +1
-            }
-            else {
+                dancebox_runtime::Session::current_index() + 1
+            } else {
                 dancebox_runtime::Session::current_index()
             };
-            let authorities = pallet_authority_assignment::CollatorContainerChain::<Runtime>::get(session_index)
-            .expect("authorities for current session should exist")
-            .orchestrator_chain;
-            
+            let authorities =
+                pallet_authority_assignment::CollatorContainerChain::<Runtime>::get(session_index)
+                    .expect("authorities for current session should exist")
+                    .orchestrator_chain;
+
             if authorities.len() == 0 {
                 panic!("Stalled chain, no authoritiy can author next block");
             }
@@ -814,20 +823,17 @@ fn fuzz_main(data: &[u8]) {
 
             //println!("guess_author: slot={}, authorities.len()={}, author={:?}", slot, authorities.len(), expected_author);
             //println!("guess_author authorities: {:?}", authorities);
-    
+
             expected_author.clone()
         }
         let author = guess_author(aura_slot as usize, block);
 
         let pre_digest = match current_timestamp {
             _ => Digest {
-                logs: vec![DigestItem::PreRuntime(
-                    AURA_ENGINE_ID,
-                    Slot::from(aura_slot).encode(),
-                ), DigestItem::PreRuntime(
-                    NIMBUS_ENGINE_ID,
-                    NimbusId::from(author).encode(),
-                )],
+                logs: vec![
+                    DigestItem::PreRuntime(AURA_ENGINE_ID, Slot::from(aura_slot).encode()),
+                    DigestItem::PreRuntime(NIMBUS_ENGINE_ID, NimbusId::from(author).encode()),
+                ],
             },
         };
 
@@ -849,7 +855,9 @@ fn fuzz_main(data: &[u8]) {
             // Use MockValidationDataInherentDataProvider
             // Read inherent data and decode it
             use {
-                cumulus_client_parachain_inherent::{MockValidationDataInherentDataProvider, MockXcmConfig},
+                cumulus_client_parachain_inherent::{
+                    MockValidationDataInherentDataProvider, MockXcmConfig,
+                },
                 futures::executor::block_on,
             };
 
@@ -999,13 +1007,18 @@ fn fuzz_main(data: &[u8]) {
                         Default::default(),
                     )
                 });
-                let para_head_key = cumulus_primitives_core::relay_chain::well_known_keys::para_head(ParaId::from(1000));
-                let para_head_data = cumulus_primitives_core::relay_chain::HeadData(para_header.encode()).encode();
+                let para_head_key =
+                    cumulus_primitives_core::relay_chain::well_known_keys::para_head(ParaId::from(
+                        1000,
+                    ));
+                let para_head_data =
+                    cumulus_primitives_core::relay_chain::HeadData(para_header.encode()).encode();
                 additional_key_values.push((para_head_key, para_head_data));
             }
 
             {
-                let relay_slot_key = cumulus_primitives_core::relay_chain::well_known_keys::CURRENT_SLOT.to_vec();
+                let relay_slot_key =
+                    cumulus_primitives_core::relay_chain::well_known_keys::CURRENT_SLOT.to_vec();
                 let relay_slot = aura_slot.saturating_mul(2);
                 additional_key_values.push((relay_slot_key, Slot::from(relay_slot).encode()));
             }
@@ -1077,9 +1090,11 @@ fn fuzz_main(data: &[u8]) {
         .unwrap()
         .unwrap();
 
-        Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorInherent(
-            pallet_author_inherent::Call::kick_off_authorship_validation {},
-        )))
+        Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(
+            RuntimeCall::AuthorInherent(
+                pallet_author_inherent::Call::kick_off_authorship_validation {},
+            ),
+        ))
         .unwrap()
         .unwrap();
 
@@ -1325,7 +1340,7 @@ fn fuzz_main(data: &[u8]) {
 
         #[cfg(not(fuzzing))]
         println!("  testing invariants for block {current_block}");
-        // Disabled because 
+        // Disabled because
         // "MessageQueue" try_state checks failed: Other("There must be some message size if in ReadyRing")
         // [100, 136, 255, 255, 255, 255, 255, 255, 255, 255, 0, 40, 0, 0, 0, 76, 47, 47, 5, 255, 255, 255]
         /*
