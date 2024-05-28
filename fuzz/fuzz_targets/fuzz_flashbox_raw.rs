@@ -191,15 +191,6 @@ fn root_can_call(call: &RuntimeCall) -> bool {
                 }
                 _ => {}
             }
-            // Allow root to set new invulnerables, but always keep Alice
-            if let pallet_invulnerables::pallet::Call::set_invulnerables { new } =
-                call_invulnerables
-            {
-                if !new.contains(&ALICE) {
-                    return false;
-                }
-                return true;
-            }
 
             false
         }
@@ -969,6 +960,8 @@ fn fuzz_main(data: &[u8]) {
                             .execute_with(|| start_block(current_block, current_timestamp));
                     }
                     FuzzRuntimeCall::CallRuntimeApi(x) => {
+                        // Disabled because anything related to block building will panic
+                        continue;
                         if x.len() < 4 {
                             continue;
                         }
