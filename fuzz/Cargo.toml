@@ -84,9 +84,6 @@ include_dir = "0.7.3"
 # the arbitrary feature. So add it as a dependency here, even though it is actually a dependency of some dependency
 quinn-proto = { version = "0.9.6", features = [ "arbitrary" ]}
 
-# litep2p 0.5.0 doesn't compile, need to pin it to 0.3.0
-litep2p = "0.3.0"
-
 [dependencies.fuzz-tanssi-runtime]
 path = ".."
 
