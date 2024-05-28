@@ -1812,8 +1812,10 @@ dependencies = [
  "pallet-relay-storage-roots",
  "pallet-root-testing",
  "pallet-services-payment",
+ "pallet-services-payment-runtime-api",
  "pallet-session",
  "pallet-stream-payment",
+ "pallet-stream-payment-runtime-api",
  "pallet-sudo",
  "pallet-timestamp",
  "pallet-transaction-payment",
@@ -2551,6 +2553,7 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 name = "flashbox-runtime"
 version = "0.1.0"
 dependencies = [
+ "async-backing-primitives",
  "cumulus-pallet-parachain-system",
  "cumulus-pallet-session-benchmarking",
  "cumulus-primitives-core",
@@ -2593,8 +2596,10 @@ dependencies = [
  "pallet-relay-storage-roots",
  "pallet-root-testing",
  "pallet-services-payment",
+ "pallet-services-payment-runtime-api",
  "pallet-session",
  "pallet-stream-payment",
+ "pallet-stream-payment-runtime-api",
  "pallet-sudo",
  "pallet-timestamp",
  "pallet-transaction-payment",
@@ -5353,6 +5358,7 @@ dependencies = [
  "frame-system",
  "hex",
  "log",
+ "nimbus-primitives",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -5911,6 +5917,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-services-payment-runtime-api"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "sp-api",
+]
+
+[[package]]
 name = "pallet-session"
 version = "4.0.0-dev"
 source = "git+https://github.com/moondance-labs/polkadot-sdk?branch=tanssi-polkadot-v1.6.0#9e728156cabd8f4b62492e9ecb2715f574323a90"
@@ -5980,6 +5994,17 @@ dependencies = [
  "sp-std",
  "tp-maths",
  "tp-traits",
+]
+
+[[package]]
+name = "pallet-stream-payment-runtime-api"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-api",
+ "thiserror",
 ]
 
 [[package]]
@@ -6166,6 +6191,7 @@ dependencies = [
  "frame-system",
  "log",
  "nimbus-primitives",
+ "pallet-xcm",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -7477,6 +7503,7 @@ dependencies = [
  "pallet-pooled-staking",
  "pallet-registrar",
  "pallet-services-payment",
+ "pallet-treasury",
  "parity-scale-codec",
  "scale-info",
  "sp-core",

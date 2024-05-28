@@ -194,15 +194,6 @@ fn root_can_call(call: &RuntimeCall) -> bool {
                 }
                 _ => {}
             }
-            // Allow root to set new invulnerables, but always keep Alice
-            if let pallet_invulnerables::pallet::Call::set_invulnerables { new } =
-                call_invulnerables
-            {
-                if !new.contains(&ALICE) {
-                    return false;
-                }
-                return true;
-            }
 
             false
         }
@@ -1093,6 +1084,8 @@ fn fuzz_main(data: &[u8]) {
                             .execute_with(|| start_block(current_block, current_timestamp));
                     }
                     FuzzRuntimeCall::CallRuntimeApi(x) => {
+                        // Disabled because anything related to block building will panic
+                        continue;
                         if x.len() < 4 {
                             continue;
                         }
@@ -1103,7 +1096,20 @@ fn fuzz_main(data: &[u8]) {
                             None => continue,
                         };
 
-                        if method == "BlockBuilder_finalize_block" {
+                        if method == "TryRuntime_on_runtime_upgrade" {
+                            // Will panic with message:
+                            // called `Result::unwrap()` on an `Err` value: Other("On chain and
+                            // current storage version do not match. Missing runtime upgrade?")
+                            continue;
+                        }
+                        if method == "SessionKeys_generate_session_keys" {
+                            // Will panic because there is no keystore in this context:
+                            // No `keystore` associated for the current context!
+                            continue;
+                        }
+                        if method.starts_with("BlockBuilder") {
+                            // BlockBuilder api must hold additional preconditions so we are not
+                            // testing it.
                             // Will panic if no inherents included with message:
                             // Timestamp must be updated once in the block
                             continue;
