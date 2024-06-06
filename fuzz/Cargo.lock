@@ -1818,11 +1818,11 @@ dependencies = [
  "pallet-xcm",
  "pallet-xcm-benchmarks",
  "pallet-xcm-core-buyer",
+ "pallet-xcm-core-buyer-runtime-api",
  "parachains-common",
  "parity-scale-codec",
  "polkadot-parachain-primitives",
  "polkadot-runtime-common",
- "primitive-types",
  "runtime-common",
  "scale-info",
  "serde",
@@ -3174,6 +3174,7 @@ dependencies = [
  "sp-state-machine",
  "sp-storage",
  "sp-transaction-storage-proof",
+ "staging-xcm",
  "tp-author-noting-inherent",
  "tp-container-chain-genesis-data",
 ]
@@ -6104,17 +6105,22 @@ dependencies = [
 name = "pallet-registrar"
 version = "0.1.0"
 dependencies = [
+ "cumulus-primitives-core",
+ "dp-chain-state-snapshot",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
+ "hex-literal 0.3.4",
  "log",
  "pallet-configuration",
  "parity-scale-codec",
+ "polkadot-runtime-common",
  "scale-info",
  "serde",
  "sp-core",
  "sp-runtime",
  "sp-std",
+ "sp-trie",
  "tp-container-chain-genesis-data",
  "tp-traits",
 ]
@@ -6129,6 +6135,7 @@ dependencies = [
  "scale-info",
  "sp-api",
  "tp-container-chain-genesis-data",
+ "tp-traits",
 ]
 
 [[package]]
@@ -6467,12 +6474,28 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
+ "sp-consensus-aura",
  "sp-core",
  "sp-io",
+ "sp-keystore",
  "sp-runtime",
  "sp-std",
  "staging-xcm",
  "tp-traits",
+ "tp-xcm-core-buyer",
+]
+
+[[package]]
+name = "pallet-xcm-core-buyer-runtime-api"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "pallet-xcm-core-buyer",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-api",
+ "thiserror",
 ]
 
 [[package]]
@@ -7997,6 +8020,7 @@ dependencies = [
  "pallet-registrar",
  "pallet-services-payment",
  "pallet-treasury",
+ "pallet-xcm",
  "parity-scale-codec",
  "scale-info",
  "sp-core",
@@ -10996,8 +11020,20 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
+ "sp-core",
  "sp-runtime",
  "sp-std",
+]
+
+[[package]]
+name = "tp-xcm-core-buyer"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-runtime",
+ "tp-traits",
 ]
 
 [[package]]

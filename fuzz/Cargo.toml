@@ -71,6 +71,7 @@ sp-runtime = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branc
 sp-state-machine = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.11.0", default-features = false }
 sp-storage = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.11.0", default-features = false }
 sp-transaction-storage-proof = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.11.0", default-features = false }
+staging-xcm = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-v1.11.0", default-features = false }
 
 futures = "0.3.1"
 hex = "0.4.3"
@@ -89,3 +90,10 @@ path = ".."
 
 [profile.release]
 debug = 1
+
+[[bin]]
+name = "xcm_v4_encoding"
+path = "fuzz_targets/xcm_v4_encoding.rs"
+test = false
+doc = false
+bench = false
