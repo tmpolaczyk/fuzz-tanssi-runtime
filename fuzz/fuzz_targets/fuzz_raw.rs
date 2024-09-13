@@ -34,8 +34,9 @@ use {
         any::TypeId,
         cell::Cell,
         time::{Duration, Instant},
+        marker::PhantomData,
     },
-    tp_container_chain_genesis_data::ContainerChainGenesisData,
+    dp_container_chain_genesis_data::ContainerChainGenesisData,
 };
 
 // We use a simple Map-based Externalities implementation
@@ -258,9 +259,9 @@ pub fn get_from_seed<TPublic: Public + 'static>(seed: &str) -> <TPublic::Pair as
         .public()
 }
 
-pub fn mock_container_chain_genesis_data<MaxLengthTokenSymbol: Get<u32>>(
+pub fn mock_container_chain_genesis_data(
     para_id: ParaId,
-) -> ContainerChainGenesisData<MaxLengthTokenSymbol> {
+) -> ContainerChainGenesisData {
     ContainerChainGenesisData {
         storage: vec![],
         name: format!("Container Chain {}", para_id).into(),
@@ -426,7 +427,7 @@ lazy_static::lazy_static! {
 
         let genesis_storage: Storage = {
             use sp_runtime::BuildStorage;
-            use tp_container_chain_genesis_data::json::container_chain_genesis_data_from_path;
+            use dp_container_chain_genesis_data::json::container_chain_genesis_data_from_path;
             use dancebox_runtime::prod_or_fast;
             use cumulus_primitives_core::ParaId;
 
@@ -467,7 +468,7 @@ lazy_static::lazy_static! {
                 .collect();
             let para_ids: Vec<_> = para_ids
                 .into_iter()
-                .map(|(para_id, genesis_data, _boot_nodes)| (para_id, genesis_data))
+                .map(|(para_id, genesis_data, _boot_nodes)| (para_id, genesis_data, None))
                 .collect();
             let accounts_with_ed = vec![
                 dancebox_runtime::StakingAccount::get(),
@@ -510,6 +511,7 @@ lazy_static::lazy_static! {
                             )
                         })
                         .collect(),
+                    ..Default::default()
                 },
                 parachain_system: Default::default(),
                 configuration: dancebox_runtime::ConfigurationConfig {
@@ -525,7 +527,7 @@ lazy_static::lazy_static! {
                         },
                         ..Default::default()
                 },
-                registrar: dancebox_runtime::RegistrarConfig { para_ids },
+                registrar: dancebox_runtime::RegistrarConfig { para_ids, phantom: PhantomData },
                 data_preservers: dancebox_runtime::DataPreserversConfig::default(),
                 services_payment: dancebox_runtime::ServicesPaymentConfig { para_id_credits },
                 sudo: dancebox_runtime::SudoConfig {
@@ -956,6 +958,7 @@ fn fuzz_main(data: &[u8]) {
 
             let mocked_parachain = MockValidationDataInherentDataProvider {
                 current_para_block: block,
+                current_para_block_head: None, // TODO
                 relay_offset: 1000,
                 relay_blocks_per_para_block: 2,
                 // TODO: Recheck
@@ -963,10 +966,10 @@ fn fuzz_main(data: &[u8]) {
                 // Randomness is just session number
                 relay_randomness_config: (),
                 xcm_config: MockXcmConfig {
-                    para_id: 1000.into(),
                     starting_dmq_mqc_head,
                     starting_hrmp_mqc_heads,
                 },
+                para_id: 1000.into(),
                 raw_downward_messages,
                 raw_horizontal_messages,
                 additional_key_values: Some(additional_key_values),
