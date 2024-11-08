@@ -524,6 +524,7 @@ lazy_static::lazy_static! {
                             collators_per_parathread: 1,
                             parathreads_per_collator: 1,
                             target_container_chain_fullness: Perbill::from_percent(80),
+                            max_parachain_cores_percentage: None,
                         },
                         ..Default::default()
                 },
