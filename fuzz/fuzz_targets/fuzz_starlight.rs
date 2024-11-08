@@ -6,6 +6,13 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/8d45d9960cff6f6c5aa8bf19808f84ef12b08535/node-template-fuzzer/src/main.rs
 
+use std::iter;
+use sp_state_machine::BasicExternalities;
+use dancelight_runtime::Balance;
+use frame_system::Account;
+use dancelight_runtime::Balances;
+use pallet_balances::Holds;
+use pallet_balances::TotalIssuance;
 use dancelight_runtime::ParaInherent;
 use dancelight_runtime::Timestamp;
 use sp_consensus_babe::BABE_ENGINE_ID;
@@ -53,66 +60,6 @@ use {
     },
     dp_container_chain_genesis_data::ContainerChainGenesisData,
 };
-
-// We use a simple Map-based Externalities implementation
-type Externalities = sp_state_machine::BasicExternalities;
-
-// The initial timestamp at the start of an input run.
-const INITIAL_TIMESTAMP: u64 = 0;
-
-/// The maximum number of blocks per fuzzer input.
-/// If set to 0, then there is no limit at all.
-/// Feel free to set this to a low number (e.g. 4) when you begin your fuzzing campaign and then set it back to 32 once you have good coverage.
-const MAX_BLOCKS_PER_INPUT: usize = 32;
-
-/// The maximum number of extrinsics per block.
-/// If set to 0, then there is no limit at all.
-/// Feel free to set this to a low number (e.g. 4) when you begin your fuzzing campaign and then set it back to 0 once you have good coverage.
-const MAX_EXTRINSICS_PER_BLOCK: usize = 0;
-
-/// Max number of seconds a block should run for.
-const MAX_TIME_FOR_BLOCK: u64 = 6;
-
-// We do not skip more than DEFAULT_STORAGE_PERIOD to avoid pallet_transaction_storage from
-// panicking on finalize.
-const MAX_BLOCK_LAPSE: u32 = sp_transaction_storage_proof::DEFAULT_STORAGE_PERIOD;
-
-// Extrinsic delimiter: `********`
-const DELIMITER: [u8; 8] = [42; 8];
-
-struct Data<'a> {
-    data: &'a [u8],
-    pointer: usize,
-    size: usize,
-}
-
-impl<'a> Data<'a> {
-    fn size_limit_reached(&self) -> bool {
-        !(MAX_BLOCKS_PER_INPUT == 0 || MAX_EXTRINSICS_PER_BLOCK == 0)
-            && self.size >= MAX_BLOCKS_PER_INPUT * MAX_EXTRINSICS_PER_BLOCK
-    }
-}
-
-impl<'a> Iterator for Data<'a> {
-    type Item = &'a [u8];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.data.len() <= self.pointer || self.size_limit_reached() {
-            return None;
-        }
-        let next_delimiter = self.data[self.pointer..]
-            .windows(DELIMITER.len())
-            .position(|window| window == DELIMITER);
-        let next_pointer = match next_delimiter {
-            Some(delimiter) => self.pointer + delimiter,
-            None => self.data.len(),
-        };
-        let res = Some(&self.data[self.pointer..next_pointer]);
-        self.pointer = next_pointer + DELIMITER.len();
-        self.size += 1;
-        res
-    }
-}
 
 fn recursively_find_call(call: RuntimeCall, matches_on: fn(RuntimeCall) -> bool) -> bool {
     if let RuntimeCall::Utility(
@@ -332,6 +279,51 @@ fn default_parachains_host_configuration(
         },
         ..Default::default()
     }
+}
+
+fn check_invariants(block: u32, initial_total_issuance: Balance) {
+    // After execution of all blocks, we run invariants
+    let mut counted_free = 0;
+    let mut counted_reserved = 0;
+    for (account, info) in Account::<Runtime>::iter() {
+        let consumers = info.consumers;
+        let providers = info.providers;
+        assert!(!(consumers > 0 && providers == 0), "Invalid c/p state");
+        counted_free += info.data.free;
+        counted_reserved += info.data.reserved;
+        let max_lock: Balance = Balances::locks(&account)
+            .iter()
+            .map(|l| l.amount)
+            .max()
+            .unwrap_or_default();
+        assert!(
+            max_lock <= info.data.frozen,
+            "Max lock ({max_lock}) should be less than or equal to frozen balance ({})",
+            info.data.frozen
+        );
+        let sum_holds: Balance = Holds::<Runtime>::get(&account)
+            .iter()
+            .map(|l| l.amount)
+            .sum();
+        assert!(
+            sum_holds <= info.data.reserved,
+            "Sum of all holds ({sum_holds}) should be less than or equal to reserved balance {}",
+            info.data.reserved
+        );
+    }
+    let total_issuance = TotalIssuance::<Runtime>::get();
+    let counted_issuance = counted_free + counted_reserved;
+    assert!(
+        total_issuance == counted_issuance,
+        "Inconsistent total issuance: {total_issuance} but counted {counted_issuance}"
+    );
+    assert!(
+        total_issuance <= initial_total_issuance,
+        "Total issuance {total_issuance} greater than initial issuance {initial_total_issuance}"
+    );
+    // We run all developer-defined integrity tests
+    AllPalletsWithSystem::integrity_test();
+    AllPalletsWithSystem::try_state(block, TryStateSelect::All).unwrap();
 }
 
 /// Helper function to turn a list of names into a list of `AccountId`
@@ -664,11 +656,15 @@ lazy_static::lazy_static! {
 
 #[derive(Debug, Encode, Decode)]
 enum FuzzRuntimeCall {
+    // Unused
     SetRelayData(Vec<u8>),
+    // Unused
     CallRuntimeApi(Vec<u8>),
+    // Unused
+    RecvEthMsg(Vec<u8>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Encode, Decode)]
 enum ExtrOrPseudo {
     Extr(RuntimeCall),
     Pseudo(FuzzRuntimeCall),
@@ -690,106 +686,22 @@ fn fuzz_main(data: &[u8]) {
     // Uncomment to init logger
     //*LOGGER;
     //println!("data: {:?}", data);
-    let iteratable = Data {
-        data: &data,
-        pointer: 0,
-        size: 0,
-    };
-
-    // Max weight for a block.
-    let max_weight: Weight = Weight::from_parts(WEIGHT_REF_TIME_PER_SECOND * 2, 0);
-
-    let mut block_count = 0;
-    let mut extrinsics_in_block = 0;
-    let mock_relay_bytes: Cell<Vec<u8>> = Cell::new(vec![]);
-
-    let mut extrinsics: Vec<(Option<u32>, usize, ExtrOrPseudo)> =
-        Vec::with_capacity(MAX_BLOCKS_PER_INPUT * (MAX_EXTRINSICS_PER_BLOCK + 1));
-    let iterable = iteratable.filter_map(|data| {
-        // We have reached the limit of block we want to decode
-        if MAX_BLOCKS_PER_INPUT != 0 && block_count >= MAX_BLOCKS_PER_INPUT {
-            return None;
-        }
-        // lapse is u32 (4 bytes), origin is u16 (2 bytes) -> 6 bytes minimum
-        let min_data_len = 4 + 2;
-        if data.len() <= min_data_len {
-            return None;
-        }
-        let lapse: u32 = u32::from_le_bytes(data[0..4].try_into().unwrap());
-        let origin: usize = u16::from_le_bytes(data[4..6].try_into().unwrap()) as usize;
-        let mut encoded_extrinsic: &[u8] = &data[6..];
-
-        // If the lapse is in the range [1, MAX_BLOCK_LAPSE] it is valid.
-        let maybe_lapse = match lapse {
-            1..=MAX_BLOCK_LAPSE => Some(lapse),
-            _ => None,
-        };
-        // We have reached the limit of extrinsics for this block
-        if maybe_lapse.is_none()
-            && MAX_EXTRINSICS_PER_BLOCK != 0
-            && extrinsics_in_block >= MAX_EXTRINSICS_PER_BLOCK
-        {
-            return None;
-        }
-
-        if let Some(mut pseudo_extrinsic) = encoded_extrinsic.strip_prefix(b"\xff\xff\xff\xff") {
-            match FuzzRuntimeCall::decode_with_depth_limit(64, &mut pseudo_extrinsic) {
-                Ok(decoded_extrinsic) => {
-                    if maybe_lapse.is_some() {
-                        block_count += 1;
-                        extrinsics_in_block = 1;
-                    } else {
-                        extrinsics_in_block += 1;
-                    }
-                    // We have reached the limit of block we want to decode
-                    if MAX_BLOCKS_PER_INPUT != 0 && block_count >= MAX_BLOCKS_PER_INPUT {
-                        return None;
-                    }
-                    return Some((maybe_lapse, origin, ExtrOrPseudo::Pseudo(decoded_extrinsic)));
-                }
-                Err(_) => return None,
-            }
-        }
-
-        match DecodeLimit::decode_with_depth_limit(64, &mut encoded_extrinsic) {
-            Ok(decoded_extrinsic) => {
-                if maybe_lapse.is_some() {
-                    block_count += 1;
-                    extrinsics_in_block = 1;
-                } else {
-                    extrinsics_in_block += 1;
-                }
-                // We have reached the limit of block we want to decode
-                if MAX_BLOCKS_PER_INPUT != 0 && block_count >= MAX_BLOCKS_PER_INPUT {
-                    return None;
-                }
-                Some((maybe_lapse, origin, ExtrOrPseudo::Extr(decoded_extrinsic)))
-            }
-            Err(_) => None,
-        }
-    });
-    extrinsics.extend(iterable);
-
-    //println!("{:?}", extrinsics);
+    let mut extrinsic_data = data;
+    //#[allow(deprecated)]
+    let extrinsics: Vec<(/* lapse */ u8, /* origin */ u8, ExtrOrPseudo)> = iter::from_fn(|| {
+        DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok()
+    }).collect();
 
     if extrinsics.is_empty() {
         return;
     }
 
-    // `externalities` represents the state of our mock chain.
-    let mut externalities = Externalities::new(GENESIS_STORAGE.clone());
-
-    let mut current_block: u32 = 1;
-    let mut current_timestamp: u64 = INITIAL_TIMESTAMP;
-    let mut current_weight: Weight = Weight::zero();
-    //let mut already_seen = 0; // This must be uncommented if you want to print events
+    let mut block: u32 = 1;
+    let mut weight: Weight = Weight::zero();
     let mut elapsed: Duration = Duration::ZERO;
-    let parent_hash = Cell::new(None);
-    let parent_header = Cell::new(None);
 
-    let start_block = |block: u32, current_timestamp: u64| {
-        #[cfg(not(fuzzing))]
-        println!("\ninitializing block {block}");
+    let initialize_block = |block: u32| {
+        log::debug!("\ninitializing block {block}");
 
         let pre_digest = Digest {
             logs: vec![DigestItem::PreRuntime(
@@ -844,271 +756,84 @@ fn fuzz_main(data: &[u8]) {
         .unwrap();
     };
 
-    let end_block = |current_block: u32, _current_timestamp: u64| {
-        #[cfg(not(fuzzing))]
-        println!("  finalizing block {current_block}");
-        let header = Executive::finalize_block();
-        parent_hash.set(Some(header.hash()));
-        parent_header.set(Some(header));
+    let finalize_block = |elapsed: Duration| {
+        log::debug!("\n  time spent: {elapsed:?}");
+        assert!(elapsed.as_secs() <= 2, "block execution took too much time");
 
-        // Per block try-state disabled for performance, we only check it once at the end
-        /*
-        #[cfg(not(fuzzing))]
-        println!("  testing invariants for block {current_block}");
-        <AllPalletsWithSystem as TryState<BlockNumber>>::try_state(
-            current_block,
-            TryStateSelect::All,
-        )
-        .unwrap();
-        */
+        log::debug!("  finalizing block");
+        Executive::finalize_block();
     };
 
-    externalities.execute_with(|| start_block(current_block, current_timestamp));
+    BasicExternalities::execute_with_storage(&mut GENESIS_STORAGE.clone(), || {
+        let initial_total_issuance = TotalIssuance::<Runtime>::get();
 
-    //println!("extrinsics {:?}", extrinsics);
+        initialize_block(block);
 
-    for (maybe_lapse, origin, extrinsic) in extrinsics {
-        // If the lapse is in the range [0, MAX_BLOCK_LAPSE] we finalize the block and initialize
-        // a new one.
-        // TODO: what if lapse is 0, isn't that invalid state?
-        if let Some(lapse) = maybe_lapse {
-            // We end the current block
-            externalities.execute_with(|| end_block(current_block, current_timestamp));
+        for (lapse, origin, extrinsic) in extrinsics {
+            if lapse > 0 {
+                finalize_block(elapsed);
 
-            // We update our state variables
-            current_block += lapse;
-            current_timestamp += lapse as u64 * SLOT_DURATION;
-            current_weight = Weight::zero();
-            elapsed = Duration::ZERO;
+                block += u32::from(lapse) * 393; // 393 * 256 = 100608 which nearly corresponds to a week
+                weight = 0.into();
+                elapsed = Duration::ZERO;
 
-            // We start the next block
-            externalities.execute_with(|| start_block(current_block, current_timestamp));
-        }
+                initialize_block(block);
+            }
 
-        let extrinsic = match extrinsic {
-            ExtrOrPseudo::Extr(extrinsic) => extrinsic,
-            ExtrOrPseudo::Pseudo(fuzz_call) => {
-                match fuzz_call {
-                    // Set relay data and start a new block
-                    FuzzRuntimeCall::SetRelayData(x) => {
-                        mock_relay_bytes.set(x);
-
-                        let lapse = 1;
-                        // We end the current block
-                        externalities.execute_with(|| end_block(current_block, current_timestamp));
-
-                        // We update our state variables
-                        current_block += lapse;
-                        current_timestamp += lapse as u64 * SLOT_DURATION;
-                        current_weight = Weight::zero();
-                        elapsed = Duration::ZERO;
-
-                        // We start the next block
-                        externalities
-                            .execute_with(|| start_block(current_block, current_timestamp));
-                    }
-                    FuzzRuntimeCall::CallRuntimeApi(x) => {
-                        // Disabled because anything related to block building will panic
+            match extrinsic {
+                ExtrOrPseudo::Extr(extrinsic) => {
+                    weight.saturating_accrue(extrinsic.get_dispatch_info().weight);
+                    if weight.ref_time() >= 2 * WEIGHT_REF_TIME_PER_SECOND {
+                        log::warn!("Extrinsic would exhaust block weight, skipping");
                         continue;
-                        if x.len() < 4 {
+                    }
+
+                    let origin = if origin == 0 {
+                        // Check if this extrinsic can be called by root, if not return a Signed origin
+                        if root_can_call(&extrinsic) {
+                            RuntimeOrigin::root()
+                        } else {
+                            RuntimeOrigin::signed(get_origin(origin.into()).clone())
+                        }
+                    } else {
+                        RuntimeOrigin::signed(get_origin(origin.into()).clone())
+                    };
+
+                    log::debug!("\n    origin:     {origin:?}");
+                    log::debug!("    call:       {extrinsic:?}");
+
+                    let now = Instant::now(); // We get the current time for timing purposes.
+                    #[allow(unused_variables)]
+                    let res = extrinsic.clone().dispatch(origin);
+                    elapsed += now.elapsed();
+
+                    log::debug!("    result:     {res:?}");
+
+                }
+                ExtrOrPseudo::Pseudo(fuzz_call) => {
+                    match fuzz_call {
+                        // Set relay data and start a new block
+                        FuzzRuntimeCall::SetRelayData(x) => {
+                            // Disabled
                             continue;
                         }
-                        let method_idx: u32 = u32::from_le_bytes(x[0..4].try_into().unwrap());
-                        let raw_data: &[u8] = &x[4..];
-                        let method = match RUNTIME_API_NAMES.get(method_idx as usize) {
-                            Some(x) => x,
-                            None => continue,
-                        };
-
-                        if method == "TryRuntime_on_runtime_upgrade" {
-                            // Will panic with message:
-                            // called `Result::unwrap()` on an `Err` value: Other("On chain and
-                            // current storage version do not match. Missing runtime upgrade?")
+                        FuzzRuntimeCall::CallRuntimeApi(x) => {
+                            // Disabled because anything related to block building will panic
                             continue;
                         }
-                        if method == "SessionKeys_generate_session_keys" {
-                            // Will panic because there is no keystore in this context:
-                            // No `keystore` associated for the current context!
+                        FuzzRuntimeCall::RecvEthMsg(x) => {
+                            // Unimplemented
                             continue;
-                        }
-                        if method.starts_with("BlockBuilder") {
-                            // BlockBuilder api must hold additional preconditions so we are not
-                            // testing it.
-                            // Will panic if no inherents included with message:
-                            // Timestamp must be updated once in the block
-                            continue;
-                        }
-
-                        //println!("Calling runtime api: {}", method);
-
-                        /*
-                        // Method must be a string, so use \0 as separator
-                        let split_index = x.iter().position(|x| *x == 0);
-                        let (method, raw_data) = match split_index {
-                            Some(index) => ( &x[..index], &x[index + 1..] ),
-                            None => ( &x[..], &[][..] ),
-                        };
-                        let method = match std::str::from_utf8(method) {
-                            Ok(x) => x,
-                            Err(_e) => continue,
-                        };
-                        */
-                        // Ignore panics because `dancelight_runtime::api::dispatch` panics on
-                        // invalid input, and we have no easy way to validate the input here.
-                        // TODO: this is not thread safe, but that only matters for the coverage script
-                        // It can be made thread safe by setting a global panic hook before starting the
-                        // main loop, and that panic hook would have methods to disable printing panics
-                        // depending on the thread.
-                        let panic_hook = std::panic::take_hook();
-                        std::panic::set_hook(Box::new(|_| {}));
-                        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            externalities
-                                .execute_with(|| dancelight_runtime::api::dispatch(method, raw_data))
-                        }));
-                        std::panic::set_hook(panic_hook);
-
-                        match res {
-                            Ok(res) => {
-                                // None means RuntimeApi not found, Some(x) means it worked, and x is the
-                                // encoded result of the RuntimeApi.
-                                // We know the RuntimeApi exists because we are reading the method from
-                                // metadata, so assert that it is not None.
-                                assert_ne!(res, None);
-                            }
-                            Err(e) => {
-                                fn error_msg_starts_with(
-                                    e: &(dyn std::any::Any + Send),
-                                    start: &str,
-                                ) -> bool {
-                                    if let Some(s) = e.downcast_ref::<String>() {
-                                        s.starts_with(start)
-                                    } else if let Some(s) = e.downcast_ref::<&'static str>() {
-                                        s.starts_with(start)
-                                    } else {
-                                        false
-                                    }
-                                }
-                                if error_msg_starts_with(&*e, "Bad input data provided to ") {
-                                    // Ignore, we simply provided invalid input for the RuntimeApi
-                                } else {
-                                    // resume_unwind does not print the panic message
-                                    //std::panic::resume_unwind(e);
-                                    if let Some(s) = e.downcast_ref::<String>() {
-                                        panic!("{}", s);
-                                    } else if let Some(s) = e.downcast_ref::<&'static str>() {
-                                        panic!("{}", s);
-                                    } else {
-                                        panic!("panic_any");
-                                    }
-                                }
-                            }
                         }
                     }
                 }
-                continue;
             }
-        };
 
-        // We get the current time for timing purposes.
-        let now = Instant::now();
-
-        let mut call_weight = Weight::zero();
-        // We compute the weight to avoid overweight blocks.
-        externalities.execute_with(|| {
-            call_weight = extrinsic.get_dispatch_info().weight;
-        });
-
-        current_weight = current_weight.saturating_add(call_weight);
-        if current_weight.ref_time() >= max_weight.ref_time() {
-            #[cfg(not(fuzzing))]
-            println!("Skipping because of max weight {}", max_weight);
-            continue;
         }
 
-        externalities.execute_with(|| {
-            let origin = if origin == 0 {
-                // Check if this extrinsic can be called by root, if not return a Signed origin
-                if root_can_call(&extrinsic) {
-                    RuntimeOrigin::root()
-                } else {
-                    RuntimeOrigin::signed(get_origin(origin).clone())
-                }
-            } else {
-                RuntimeOrigin::signed(get_origin(origin).clone())
-            };
-            #[cfg(not(fuzzing))]
-            {
-                println!("\n    origin:     {:?}", origin);
-                println!("    call:       {:?}", extrinsic);
-            }
-            let _res = extrinsic.dispatch(origin);
-            #[cfg(not(fuzzing))]
-            println!("    result:     {:?}", _res);
+        finalize_block(elapsed);
 
-            // Uncomment to print events for debugging purposes
-
-            /*
-            #[cfg(not(fuzzing))]
-            {
-                let all_events = dancelight_runtime::System::events();
-                let events: Vec<_> = all_events.clone().into_iter().skip(already_seen).collect();
-                already_seen = all_events.len();
-                println!("  events:     {:?}\n", events);
-            }
-            */
-        });
-
-        elapsed += now.elapsed();
-    }
-
-    #[cfg(not(fuzzing))]
-    println!("\n  time spent: {:?}", elapsed);
-    if elapsed.as_secs() > MAX_TIME_FOR_BLOCK {
-        panic!("block execution took too much time")
-    }
-
-    // We end the final block
-    externalities.execute_with(|| end_block(current_block, current_timestamp));
-
-    // After execution of all blocks.
-    externalities.execute_with(|| {
-        // We keep track of the sum of balance of accounts
-        let mut counted_free = 0;
-        let mut counted_reserved = 0;
-        let mut _counted_frozen = 0;
-
-        for acc in frame_system::Account::<Runtime>::iter() {
-            // Check that the consumer/provider state is valid.
-            let acc_consumers = acc.1.consumers;
-            let acc_providers = acc.1.providers;
-            if acc_consumers > 0 && acc_providers == 0 {
-                panic!("Invalid state");
-            }
-
-            // Increment our balance counts
-            counted_free += acc.1.data.free;
-            counted_reserved += acc.1.data.reserved;
-            _counted_frozen += acc.1.data.frozen;
-        }
-
-        let total_issuance = pallet_balances::TotalIssuance::<Runtime>::get();
-        let counted_issuance = counted_free + counted_reserved;
-        if total_issuance != counted_issuance {
-            panic!("Inconsistent total issuance: {total_issuance} but counted {counted_issuance}");
-        }
-
-        #[cfg(not(fuzzing))]
-        println!("  testing invariants for block {current_block}");
-        <AllPalletsWithSystem as TryState<BlockNumber>>::try_state(
-            current_block,
-            TryStateSelect::All,
-        )
-        .unwrap();
-
-        #[cfg(not(fuzzing))]
-        println!("\nrunning integrity tests\n");
-        // We run all developer-defined integrity tests
-        <AllPalletsWithSystem as IntegrityTest>::integrity_test();
+        check_invariants(block, initial_total_issuance);
     });
 }
 
