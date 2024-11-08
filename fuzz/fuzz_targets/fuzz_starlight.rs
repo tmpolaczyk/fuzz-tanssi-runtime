@@ -2,63 +2,55 @@
 #![allow(clippy::absurd_extreme_comparisons)]
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-//! Tanssi Runtime fuzz target. Generates random extrinsics and some mock relay validation data (but no sudo).
+//! Tanssi Runtime fuzz target. Generates random extrinsics and some pseudo-extrinsics.
 //!
-//! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/8d45d9960cff6f6c5aa8bf19808f84ef12b08535/node-template-fuzzer/src/main.rs
+//! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
-use std::iter;
-use sp_state_machine::BasicExternalities;
-use dancelight_runtime::Balance;
-use frame_system::Account;
-use dancelight_runtime::Balances;
-use pallet_balances::Holds;
-use pallet_balances::TotalIssuance;
-use dancelight_runtime::ParaInherent;
-use dancelight_runtime::Timestamp;
-use sp_consensus_babe::BABE_ENGINE_ID;
-use sp_consensus_babe::digests::PreDigest;
-use sp_core::H256;
-use sp_consensus_babe::digests::SecondaryPlainPreDigest;
-use primitives::ValidationCode;
-use pallet_configuration::HostConfiguration;
-use sp_runtime::Saturating;
-use primitives::{vstaging::SchedulerParams };
-use std::cmp::max;
-use dancelight_runtime::genesis_config_presets::get_authority_keys_from_seed;
-use polkadot_core_primitives::BlockNumber;
-use polkadot_core_primitives::Signature;
-use dancelight_runtime_constants::time::SLOT_DURATION;
 use {
     cumulus_primitives_core::ParaId,
     dancelight_runtime::{
-        AccountId, AllPalletsWithSystem, Executive, Header, Runtime, RuntimeCall,
-        RuntimeOrigin, UncheckedExtrinsic,
+        genesis_config_presets::get_authority_keys_from_seed, AccountId, AllPalletsWithSystem,
+        Balance, Balances, Executive, Header, ParaInherent, Runtime, RuntimeCall, RuntimeOrigin,
+        Timestamp, UncheckedExtrinsic,
     },
+    dancelight_runtime_constants::time::SLOT_DURATION,
+    dp_container_chain_genesis_data::ContainerChainGenesisData,
     dp_core::well_known_keys::PARAS_HEADS_INDEX,
     frame_metadata::{v15::RuntimeMetadataV15, RuntimeMetadata, RuntimeMetadataPrefixed},
     frame_support::{
         dispatch::GetDispatchInfo,
         pallet_prelude::Weight,
-        traits::{IntegrityTest, TryState, TryStateSelect},
+        traits::{IntegrityTest, OriginTrait, TryState, TryStateSelect},
         weights::constants::WEIGHT_REF_TIME_PER_SECOND,
         Hashable,
     },
+    frame_system::Account,
     nimbus_primitives::{NimbusId, NIMBUS_ENGINE_ID},
+    pallet_balances::{Holds, TotalIssuance},
+    pallet_configuration::HostConfiguration,
     parity_scale_codec::{DecodeLimit, Encode},
+    polkadot_core_primitives::{BlockNumber, Signature},
+    primitives::{vstaging::SchedulerParams, ValidationCode},
     sp_consensus_aura::{Slot, AURA_ENGINE_ID},
-    sp_core::{sr25519, Decode, Get, Pair, Public},
+    sp_consensus_babe::{
+        digests::{PreDigest, SecondaryPlainPreDigest},
+        BABE_ENGINE_ID,
+    },
+    sp_core::{sr25519, Decode, Get, Pair, Public, H256},
     sp_inherents::InherentDataProvider,
     sp_runtime::{
         traits::{Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
-        Digest, DigestItem, Perbill, Storage,
+        Digest, DigestItem, Perbill, Saturating, Storage,
     },
+    sp_state_machine::BasicExternalities,
     std::{
         any::TypeId,
         cell::Cell,
-        time::{Duration, Instant},
+        cmp::max,
+        iter,
         marker::PhantomData,
+        time::{Duration, Instant},
     },
-    dp_container_chain_genesis_data::ContainerChainGenesisData,
 };
 
 fn recursively_find_call(call: RuntimeCall, matches_on: fn(RuntimeCall) -> bool) -> bool {
@@ -73,21 +65,14 @@ fn recursively_find_call(call: RuntimeCall, matches_on: fn(RuntimeCall) -> bool)
                 return true;
             }
         }
-    }
-    /*
-    else if let RuntimeCall::Lottery(pallet_lottery::Call::buy_ticket { call })
-    | RuntimeCall::Multisig(pallet_multisig::Call::as_multi_threshold_1 {
+    } else if let RuntimeCall::Multisig(pallet_multisig::Call::as_multi_threshold_1 {
         call, ..
     })
     | RuntimeCall::Utility(pallet_utility::Call::as_derivative { call, .. })
-    | RuntimeCall::Council(pallet_collective::Call::propose {
-        proposal: call, ..
-    }) = call
+    | RuntimeCall::Proxy(pallet_proxy::Call::proxy { call, .. }) = call
     {
         return recursively_find_call(*call.clone(), matches_on);
-    }
-    */
-    else if matches_on(call) {
+    } else if matches_on(call) {
         return true;
     }
     false
@@ -163,9 +148,7 @@ pub fn get_from_seed<TPublic: Public + 'static>(seed: &str) -> <TPublic::Pair as
         .public()
 }
 
-pub fn mock_container_chain_genesis_data(
-    para_id: ParaId,
-) -> ContainerChainGenesisData {
+pub fn mock_container_chain_genesis_data(para_id: ParaId) -> ContainerChainGenesisData {
     ContainerChainGenesisData {
         storage: vec![],
         name: format!("Container Chain {}", para_id).into(),
@@ -201,8 +184,7 @@ where
 ///
 /// The input must be a tuple of individual keys (a single arg for now since we have just one key).
 pub fn template_session_keys(account: AccountId) -> dancelight_runtime::SessionKeys {
-    let authority_keys =
-        get_authority_keys_from_seed(&account.to_string(), None);
+    let authority_keys = get_authority_keys_from_seed(&account.to_string(), None);
 
     dancelight_runtime::SessionKeys {
         babe: authority_keys.babe.clone(),
@@ -229,7 +211,6 @@ pub fn invulnerables_from_seeds<S: AsRef<str>, I: Iterator<Item = S>>(
         })
         .collect()
 }
-
 
 fn default_parachains_host_configuration(
 ) -> runtime_parachains::configuration::HostConfiguration<primitives::BlockNumber> {
@@ -688,9 +669,40 @@ fn fuzz_main(data: &[u8]) {
     //println!("data: {:?}", data);
     let mut extrinsic_data = data;
     //#[allow(deprecated)]
-    let extrinsics: Vec<(/* lapse */ u8, /* origin */ u8, ExtrOrPseudo)> = iter::from_fn(|| {
-        DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok()
-    }).collect();
+    let extrinsics: Vec<(/* lapse */ u8, /* origin */ u8, ExtrOrPseudo)> =
+        iter::from_fn(|| DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
+        .filter(|(_, _, x)| match x {
+            ExtrOrPseudo::Extr(x) => !recursively_find_call(x.clone(), |call| {
+                // We filter out calls with Fungible(0) as they cause a debug crash
+                matches!(call.clone(), RuntimeCall::XcmPallet(pallet_xcm::Call::execute { message, .. })
+                    if matches!(message.as_ref(), staging_xcm::VersionedXcm::V2(staging_xcm::v2::Xcm(msg))
+                        if msg.iter().any(|m| matches!(m, staging_xcm::opaque::v2::prelude::BuyExecution { fees: staging_xcm::v2::MultiAsset { fun, .. }, .. }
+                            if fun == &staging_xcm::v2::Fungibility::Fungible(0)
+                        )
+                    )) || matches!(message.as_ref(), staging_xcm::VersionedXcm::V3(staging_xcm::v3::Xcm(msg))
+                        if msg.iter().any(|m| matches!(m, staging_xcm::opaque::v3::prelude::BuyExecution { weight_limit: staging_xcm::opaque::v3::WeightLimit::Limited(weight), .. }
+                            if weight.ref_time() <= 1
+                        ))
+                    )
+                )
+                || matches!(call.clone(), RuntimeCall::XcmPallet(pallet_xcm::Call::transfer_assets_using_type_and_then { assets, ..})
+                    if staging_xcm::v2::MultiAssets::try_from(*assets.clone())
+                        .map(|assets| assets.inner().iter().any(|a| matches!(a, staging_xcm::v2::MultiAsset { fun, .. }
+                            if fun == &staging_xcm::v2::Fungibility::Fungible(0)
+                        ))).unwrap_or(false)
+                )
+                || matches!(call.clone(), RuntimeCall::System(_))
+                || matches!(
+                    &call,
+                    RuntimeCall::Referenda(pallet_referenda::Call::submit {
+                        proposal_origin: matching_origin,
+                        ..
+                    }) if RuntimeOrigin::from(*matching_origin.clone()).caller() == RuntimeOrigin::root().caller()
+                )
+            }),
+            ExtrOrPseudo::Pseudo(x) => true,
+        })
+            .collect();
 
     if extrinsics.is_empty() {
         return;
@@ -736,9 +748,7 @@ fn fuzz_main(data: &[u8]) {
         Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION).unwrap();
 
         Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
-            pallet_author_noting::Call::set_latest_author_data {
-                data: (),
-            },
+            pallet_author_noting::Call::set_latest_author_data { data: () },
         )))
         .unwrap()
         .unwrap();
@@ -808,7 +818,6 @@ fn fuzz_main(data: &[u8]) {
                     elapsed += now.elapsed();
 
                     log::debug!("    result:     {res:?}");
-
                 }
                 ExtrOrPseudo::Pseudo(fuzz_call) => {
                     match fuzz_call {
@@ -828,7 +837,6 @@ fn fuzz_main(data: &[u8]) {
                     }
                 }
             }
-
         }
 
         finalize_block(elapsed);

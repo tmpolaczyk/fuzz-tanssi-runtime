@@ -12,6 +12,7 @@ use {
         AccountId, AllPalletsWithSystem, BlockNumber, Executive, Header, Runtime, RuntimeCall,
         RuntimeOrigin, Signature, UncheckedExtrinsic, SLOT_DURATION,
     },
+    dp_container_chain_genesis_data::ContainerChainGenesisData,
     dp_core::well_known_keys::PARAS_HEADS_INDEX,
     frame_metadata::{v15::RuntimeMetadataV15, RuntimeMetadata, RuntimeMetadataPrefixed},
     frame_support::{
@@ -33,10 +34,9 @@ use {
     std::{
         any::TypeId,
         cell::Cell,
-        time::{Duration, Instant},
         marker::PhantomData,
+        time::{Duration, Instant},
     },
-    dp_container_chain_genesis_data::ContainerChainGenesisData,
 };
 
 // We use a simple Map-based Externalities implementation
@@ -259,9 +259,7 @@ pub fn get_from_seed<TPublic: Public + 'static>(seed: &str) -> <TPublic::Pair as
         .public()
 }
 
-pub fn mock_container_chain_genesis_data(
-    para_id: ParaId,
-) -> ContainerChainGenesisData {
+pub fn mock_container_chain_genesis_data(para_id: ParaId) -> ContainerChainGenesisData {
     ContainerChainGenesisData {
         storage: vec![],
         name: format!("Container Chain {}", para_id).into(),

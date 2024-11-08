@@ -3385,10 +3385,14 @@ dependencies = [
  "pallet-balances",
  "pallet-configuration",
  "pallet-invulnerables",
+ "pallet-multisig",
+ "pallet-proxy",
+ "pallet-referenda",
  "pallet-registrar",
  "pallet-session",
  "pallet-timestamp",
  "pallet-utility",
+ "pallet-xcm",
  "parity-scale-codec",
  "polkadot-core-primitives",
  "polkadot-primitives",
@@ -3412,6 +3416,7 @@ dependencies = [
  "sp-state-machine",
  "sp-storage",
  "sp-transaction-storage-proof",
+ "staging-xcm",
  "tp-author-noting-inherent",
 ]
 
