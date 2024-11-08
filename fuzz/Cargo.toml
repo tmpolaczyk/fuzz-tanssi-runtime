@@ -30,6 +30,8 @@ doc = false
 [dependencies]
 dancebox-runtime = { path = "../../tanssi/runtime/dancebox", default-features = false, features = [ "std", "try-runtime" ] }
 flashbox-runtime = { path = "../../tanssi/runtime/flashbox", default-features = false, features = [ "std", "try-runtime" ] }
+dancelight-runtime = { path = "../../tanssi/solo-chains/runtime/dancelight", default-features = false, features = [ "std", "try-runtime" ] }
+dancelight-runtime-constants = { path = "../../tanssi/solo-chains/runtime/dancelight/constants", default-features = false, features = [ "std" ] }
 lazy_static = "1.4.0"
 libfuzzer-sys = { version = "0.4", features = [ "arbitrary-derive" ] }
 pallet-authority-assignment = { path = "../../tanssi/pallets/authority-assignment", default-features = false }
@@ -42,6 +44,10 @@ dp-container-chain-genesis-data = { git = "https://github.com/moondance-labs/dan
 
 dp-core = { git = "https://github.com/moondance-labs/dancekit", branch = "tanssi-polkadot-stable2407", default-features = false, features = [ "std" ] }
 
+runtime-parachains = { package = "polkadot-runtime-parachains", git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
+primitives = { package = "polkadot-primitives", git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
+polkadot-core-primitives = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
+runtime-common = { package = "polkadot-runtime-common", git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
 cumulus-client-parachain-inherent = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
 cumulus-pallet-parachain-system = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
 cumulus-primitives-core = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
@@ -72,8 +78,10 @@ sp-state-machine = { git = "https://github.com/moondance-labs/polkadot-sdk", bra
 sp-storage = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
 sp-transaction-storage-proof = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
 
+bitvec = { version = "1.0.1", default-features = false, features = [ "alloc" ] }
 futures = "0.3.1"
 hex = "0.4.3"
+log = { version = "0.4.21", default-features = false }
 indicatif = { version = "0.17", features = [ "rayon" ] }
 rayon = "1"
 serde = { version = "1.0.197", default-features = false }
@@ -89,3 +97,10 @@ path = ".."
 
 [profile.release]
 debug = 1
+
+[[bin]]
+name = "fuzz_starlight"
+path = "fuzz_targets/fuzz_starlight.rs"
+test = false
+doc = false
+bench = false
