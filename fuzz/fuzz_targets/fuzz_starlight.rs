@@ -653,7 +653,9 @@ enum ExtrOrPseudo {
 
 fn init_logger() {
     use sc_tracing::logging::LoggerBuilder;
-    let mut logger = LoggerBuilder::new(format!("error"));
+    let env_rust_log = std::env::var("RUST_LOG");
+    // No logs by default
+    let mut logger = LoggerBuilder::new(env_rust_log.unwrap_or("".to_string()));
     logger.with_log_reloading(false).with_detailed_output(false);
 
     logger.init().unwrap();
@@ -665,7 +667,7 @@ lazy_static::lazy_static! {
 
 fn fuzz_main(data: &[u8]) {
     // Uncomment to init logger
-    //*LOGGER;
+    *LOGGER;
     //println!("data: {:?}", data);
     let mut extrinsic_data = data;
     //#[allow(deprecated)]
@@ -713,7 +715,7 @@ fn fuzz_main(data: &[u8]) {
     let mut elapsed: Duration = Duration::ZERO;
 
     let initialize_block = |block: u32| {
-        log::debug!("\ninitializing block {block}");
+        log::debug!(target: "fuzz::initialize", "\ninitializing block {block}");
 
         let pre_digest = Digest {
             logs: vec![DigestItem::PreRuntime(
@@ -744,7 +746,6 @@ fn fuzz_main(data: &[u8]) {
 
         Executive::initialize_block(&parent_header);
 
-        log::debug!("  setting timestamp");
         Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION).unwrap();
 
         Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
@@ -753,7 +754,6 @@ fn fuzz_main(data: &[u8]) {
         .unwrap()
         .unwrap();
 
-        log::debug!("  setting bitfields");
         ParaInherent::enter(
             RuntimeOrigin::none(),
             primitives::InherentData {
@@ -767,10 +767,10 @@ fn fuzz_main(data: &[u8]) {
     };
 
     let finalize_block = |elapsed: Duration| {
-        log::debug!("\n  time spent: {elapsed:?}");
+        log::debug!(target: "fuzz::time", "\n  time spent: {elapsed:?}");
         assert!(elapsed.as_secs() <= 2, "block execution took too much time");
 
-        log::debug!("  finalizing block");
+        log::debug!(target: "fuzz::finalize", "  finalizing block");
         Executive::finalize_block();
     };
 
@@ -809,15 +809,15 @@ fn fuzz_main(data: &[u8]) {
                         RuntimeOrigin::signed(get_origin(origin.into()).clone())
                     };
 
-                    log::debug!("\n    origin:     {origin:?}");
-                    log::debug!("    call:       {extrinsic:?}");
+                    log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
+                    log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
 
                     let now = Instant::now(); // We get the current time for timing purposes.
                     #[allow(unused_variables)]
                     let res = extrinsic.clone().dispatch(origin);
                     elapsed += now.elapsed();
 
-                    log::debug!("    result:     {res:?}");
+                    log::debug!(target: "fuzz::result", "    result:     {res:?}");
                 }
                 ExtrOrPseudo::Pseudo(fuzz_call) => {
                     match fuzz_call {
