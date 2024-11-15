@@ -109,3 +109,10 @@ path = "fuzz_targets/fuzz_starlight.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_starlight_coverage"
+path = "fuzz_targets/fuzz_starlight_coverage.rs"
+test = false
+doc = false
+bench = false

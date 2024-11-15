@@ -103,12 +103,13 @@ def execute_coverage_binary(target_name):
         env = os.environ.copy()
         # TODO: use absolute path
         env["LLVM_PROFILE_FILE"] = "proffiles/default_%m_%p.profraw"
+        env["RUST_LOG"] = "off"
         subprocess.run([f"./target/x86_64-unknown-linux-gnu/debug/{target_name}_coverage"], env=env, check=True)
     except Exception as e:
         print(f"Failed to execute '{target_name}_coverage': {e}")
 
 def main():
-    target_name = "fuzz_raw"
+    target_name = "fuzz_starlight"
     setup_coverage_target(target_name)
     write_coverage_target(target_name, 'fuzz_targets/coverage.rs', f"fuzz_targets/{target_name}.rs", f"fuzz_targets/{target_name}_coverage.rs")
     build_coverage_binary(target_name)

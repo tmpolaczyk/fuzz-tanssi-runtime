@@ -1923,6 +1923,7 @@ dependencies = [
  "pallet-elections-phragmen",
  "pallet-external-validator-slashes",
  "pallet-external-validators",
+ "pallet-external-validators-rewards",
  "pallet-grandpa",
  "pallet-identity",
  "pallet-inflation-rewards",
@@ -6449,6 +6450,25 @@ dependencies = [
  "pallet-session",
  "parity-scale-codec",
  "rand",
+ "scale-info",
+ "sp-runtime",
+ "sp-staking",
+ "sp-std",
+ "tp-traits",
+]
+
+[[package]]
+name = "pallet-external-validators-rewards"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "pallet-balances",
+ "pallet-session",
+ "parity-scale-codec",
+ "polkadot-primitives",
+ "polkadot-runtime-parachains",
  "scale-info",
  "sp-runtime",
  "sp-staking",
