@@ -108,12 +108,34 @@ def execute_coverage_binary(target_name):
     except Exception as e:
         print(f"Failed to execute '{target_name}_coverage': {e}")
 
+def generate_html_report(target_name):
+    return
+    # Unimplemented, need to run this command manually:
+    """
+    grcov proffiles/ -s $HOME --binary-path ./target/x86_64-unknown-linux-gnu/debug -t html --branch --ignore-not-existing --ignore "target/debug/build/*" --ignore "*mock.rs" --ignore "*tests.rs"             -o coverage_s1 --llvm
+    """
+
+def upload_to_ghpages(target_name):
+    return
+    # Unimplemented, need to run this command manually:
+    """
+    git checkout gh-pages
+    cp -rf fuzz/coverage_tmpname coverage/{target_name}
+    # update index.html if new target
+    git add coverage
+    git commit -a --amend
+    git push -f
+    git checkout -
+    """
+
 def main():
     target_name = "fuzz_starlight"
     setup_coverage_target(target_name)
     write_coverage_target(target_name, 'fuzz_targets/coverage.rs', f"fuzz_targets/{target_name}.rs", f"fuzz_targets/{target_name}_coverage.rs")
     build_coverage_binary(target_name)
     execute_coverage_binary(target_name)
+    generate_html_report(target_name)
+    upload_to_ghpages(target_name)
 
 if __name__ == "__main__":
     main()

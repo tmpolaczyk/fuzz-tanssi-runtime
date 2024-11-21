@@ -72,6 +72,7 @@ sc-client-api = { git = "https://github.com/moondance-labs/polkadot-sdk", branch
 sc-service = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407" }
 sc-tracing = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407" }
 sp-consensus = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
+sp-externalities = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
 sp-consensus-aura = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
 sp-consensus-babe = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
 sp-consensus-slots = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2407", default-features = false }
@@ -85,6 +86,7 @@ staging-xcm = { default-features = false, git = "https://github.com/moondance-la
 
 bitvec = { version = "1.0.1", default-features = false, features = [ "alloc" ] }
 futures = "0.3.1"
+hash-db = { version = "0.16.0", default-features = false }
 hex = "0.4.3"
 log = { version = "0.4.21", default-features = false }
 indicatif = { version = "0.17", features = [ "rayon" ] }
@@ -113,6 +115,13 @@ bench = false
 [[bin]]
 name = "fuzz_starlight_coverage"
 path = "fuzz_targets/fuzz_starlight_coverage.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_starlight_live"
+path = "fuzz_targets/fuzz_starlight_live.rs"
 test = false
 doc = false
 bench = false

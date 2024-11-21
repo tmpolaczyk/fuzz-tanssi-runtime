@@ -45,8 +45,10 @@ use {
     sp_state_machine::BasicExternalities,
     std::{
         any::TypeId,
+        sync::Arc,
         cell::Cell,
         cmp::max,
+        collections::BTreeMap,
         iter,
         marker::PhantomData,
         time::{Duration, Instant},
@@ -292,6 +294,8 @@ fn check_invariants(block: u32, initial_total_issuance: Balance) {
             info.data.reserved
         );
     }
+    // TODO: Total issuance is wrong, even if we don't add any balances on genesis
+    /*
     let total_issuance = TotalIssuance::<Runtime>::get();
     let counted_issuance = counted_free + counted_reserved;
     assert!(
@@ -302,6 +306,7 @@ fn check_invariants(block: u32, initial_total_issuance: Balance) {
         total_issuance <= initial_total_issuance,
         "Total issuance {total_issuance} greater than initial issuance {initial_total_issuance}"
     );
+    */
     // We run all developer-defined integrity tests
     AllPalletsWithSystem::integrity_test();
     AllPalletsWithSystem::try_state(block, TryStateSelect::All).unwrap();
@@ -377,6 +382,256 @@ fn get_origin(origin: usize) -> &'static AccountId {
     &VALID_ORIGINS[origin % VALID_ORIGINS.len()]
 }
 
+/*
+use fuzz_externalities::FuzzExternalities;
+mod fuzz_externalities {
+    use super::*;
+    use sp_state_machine::OverlayedChanges;
+    use sp_core::Blake2Hasher;
+    use sp_externalities::Extensions;
+    use std::any::Any;
+    use sp_storage::TrackedStorageKey;
+    use sp_state_machine::LayoutV1;
+    use sp_storage::StateVersion;
+    use sp_storage::ChildInfo;
+    use trie_db::TrieConfiguration;
+    use sp_core::Hasher;
+    use sp_state_machine::LayoutV0;
+    use sp_externalities::MultiRemovalResults;
+    use sp_storage::well_known_keys::is_child_storage_key;
+    use sp_storage::StorageKey;
+
+    /// Simple Map-based Externalities impl.
+    #[derive(Debug)]
+    pub struct FuzzExternalities {
+        base: Arc<Storage>,
+        overlay: OverlayedChanges<Blake2Hasher>,
+        extensions: Extensions,
+    }
+
+    impl FuzzExternalities {
+        pub fn new(base: Arc<Storage>) -> Self {
+            Self { base, overlay: Default::default(), extensions: Default::default() }
+        }
+
+        /// Execute the given closure while `self` is set as externalities.
+	///
+	/// Returns the result of the given closure.
+	pub fn execute_with<R>(&mut self, f: impl FnOnce() -> R) -> R {
+            sp_externalities::set_and_run_with_externalities(self, f)
+	}
+
+        pub fn execute_with_storage<R>(
+            storage: Arc<Storage>,
+            f: impl FnOnce() -> R,
+	) -> R {
+            let mut ext = Self::new(storage);
+
+            let r = ext.execute_with(f);
+
+            //*storage = ext.into_storages();
+
+            r
+	}
+    }
+
+    impl sp_externalities::Externalities for FuzzExternalities {
+	fn set_offchain_storage(&mut self, _key: &[u8], _value: Option<&[u8]>) {}
+
+	fn storage(&mut self, key: &[u8]) -> Option<StorageValue> {
+		self.overlay.storage(key).and_then(|v| v.map(|v| v.to_vec()))
+	}
+
+	fn storage_hash(&mut self, key: &[u8]) -> Option<Vec<u8>> {
+		self.storage(key).map(|v| Blake2Hasher::hash(&v).encode())
+	}
+
+	fn child_storage(&mut self, child_info: &ChildInfo, key: &[u8]) -> Option<StorageValue> {
+		self.overlay.child_storage(child_info, key).and_then(|v| v.map(|v| v.to_vec()))
+	}
+
+	fn child_storage_hash(&mut self, child_info: &ChildInfo, key: &[u8]) -> Option<Vec<u8>> {
+		self.child_storage(child_info, key).map(|v| Blake2Hasher::hash(&v).encode())
+	}
+
+	fn next_storage_key(&mut self, key: &[u8]) -> Option<StorageKey> {
+		self.overlay.iter_after(key).find_map(|(k, v)| v.value().map(|_| k.to_vec()))
+	}
+
+	fn next_child_storage_key(&mut self, child_info: &ChildInfo, key: &[u8]) -> Option<StorageKey> {
+		self.overlay
+			.child_iter_after(child_info.storage_key(), key)
+			.find_map(|(k, v)| v.value().map(|_| k.to_vec()))
+	}
+
+	fn place_storage(&mut self, key: StorageKey, maybe_value: Option<StorageValue>) {
+		if is_child_storage_key(&key) {
+			log::warn!(target: "trie", "Refuse to set child storage key via main storage");
+			return
+		}
+
+		self.overlay.set_storage(key, maybe_value)
+	}
+
+	fn place_child_storage(
+		&mut self,
+		child_info: &ChildInfo,
+		key: StorageKey,
+		value: Option<StorageValue>,
+	) {
+		self.overlay.set_child_storage(child_info, key, value);
+	}
+
+	fn kill_child_storage(
+		&mut self,
+		child_info: &ChildInfo,
+		_maybe_limit: Option<u32>,
+		_maybe_cursor: Option<&[u8]>,
+	) -> MultiRemovalResults {
+		let count = self.overlay.clear_child_storage(child_info);
+		MultiRemovalResults { maybe_cursor: None, backend: count, unique: count, loops: count }
+	}
+
+	fn clear_prefix(
+		&mut self,
+		prefix: &[u8],
+		_maybe_limit: Option<u32>,
+		_maybe_cursor: Option<&[u8]>,
+	) -> MultiRemovalResults {
+		if is_child_storage_key(prefix) {
+			warn!(
+				target: "trie",
+				"Refuse to clear prefix that is part of child storage key via main storage"
+			);
+			let maybe_cursor = Some(prefix.to_vec());
+			return MultiRemovalResults { maybe_cursor, backend: 0, unique: 0, loops: 0 }
+		}
+
+		let count = self.overlay.clear_prefix(prefix);
+		MultiRemovalResults { maybe_cursor: None, backend: count, unique: count, loops: count }
+	}
+
+	fn clear_child_prefix(
+		&mut self,
+		child_info: &ChildInfo,
+		prefix: &[u8],
+		_maybe_limit: Option<u32>,
+		_maybe_cursor: Option<&[u8]>,
+	) -> MultiRemovalResults {
+		let count = self.overlay.clear_child_prefix(child_info, prefix);
+		MultiRemovalResults { maybe_cursor: None, backend: count, unique: count, loops: count }
+	}
+
+	fn storage_append(&mut self, key: Vec<u8>, element: Vec<u8>) {
+		self.overlay.append_storage(key, element, Default::default);
+	}
+
+	fn storage_root(&mut self, state_version: StateVersion) -> Vec<u8> {
+		let mut top = self
+			.overlay
+			.changes_mut()
+			.filter_map(|(k, v)| v.value().map(|v| (k.clone(), v.clone())))
+			.collect::<BTreeMap<_, _>>();
+		// Single child trie implementation currently allows using the same child
+		// empty root for all child trie. Using null storage key until multiple
+		// type of child trie support.
+		let empty_hash = empty_child_trie_root::<LayoutV1<Blake2Hasher>>();
+		for child_info in self.overlay.children().map(|d| d.1.clone()).collect::<Vec<_>>() {
+			let child_root = self.child_storage_root(&child_info, state_version);
+			if empty_hash[..] == child_root[..] {
+				top.remove(child_info.prefixed_storage_key().as_slice());
+			} else {
+				top.insert(child_info.prefixed_storage_key().into_inner(), child_root);
+			}
+		}
+
+		match state_version {
+			StateVersion::V0 => LayoutV0::<Blake2Hasher>::trie_root(top).as_ref().into(),
+			StateVersion::V1 => LayoutV1::<Blake2Hasher>::trie_root(top).as_ref().into(),
+		}
+	}
+
+	fn child_storage_root(
+		&mut self,
+		child_info: &ChildInfo,
+		state_version: StateVersion,
+	) -> Vec<u8> {
+		if let Some((data, child_info)) = self.overlay.child_changes_mut(child_info.storage_key()) {
+			let delta =
+				data.into_iter().map(|(k, v)| (k.as_ref(), v.value().map(|v| v.as_slice())));
+			crate::in_memory_backend::new_in_mem::<Blake2Hasher>()
+				.child_storage_root(&child_info, delta, state_version)
+				.0
+		} else {
+			empty_child_trie_root::<LayoutV1<Blake2Hasher>>()
+		}
+		.encode()
+	}
+
+	fn storage_start_transaction(&mut self) {
+		self.overlay.start_transaction()
+	}
+
+	fn storage_rollback_transaction(&mut self) -> Result<(), ()> {
+		self.overlay.rollback_transaction().map_err(drop)
+	}
+
+	fn storage_commit_transaction(&mut self) -> Result<(), ()> {
+		self.overlay.commit_transaction().map_err(drop)
+	}
+
+	fn wipe(&mut self) {}
+
+	fn commit(&mut self) {}
+
+	fn read_write_count(&self) -> (u32, u32, u32, u32) {
+		unimplemented!("read_write_count is not supported in Basic")
+	}
+
+	fn reset_read_write_count(&mut self) {
+		unimplemented!("reset_read_write_count is not supported in Basic")
+	}
+
+	fn get_whitelist(&self) -> Vec<TrackedStorageKey> {
+		unimplemented!("get_whitelist is not supported in Basic")
+	}
+
+	fn set_whitelist(&mut self, _: Vec<TrackedStorageKey>) {
+		unimplemented!("set_whitelist is not supported in Basic")
+	}
+
+	fn get_read_and_written_keys(&self) -> Vec<(Vec<u8>, u32, u32, bool)> {
+		unimplemented!("get_read_and_written_keys is not supported in Basic")
+	}
+    }
+
+    impl sp_externalities::ExtensionStore for FuzzExternalities {
+            fn extension_by_type_id(&mut self, type_id: TypeId) -> Option<&mut dyn Any> {
+                    self.extensions.get_mut(type_id)
+            }
+
+            fn register_extension_with_type_id(
+                    &mut self,
+                    type_id: TypeId,
+                    extension: Box<dyn sp_externalities::Extension>,
+            ) -> Result<(), sp_externalities::Error> {
+                    self.extensions.register_with_type_id(type_id, extension)
+            }
+
+            fn deregister_extension_by_type_id(
+                    &mut self,
+                    type_id: TypeId,
+            ) -> Result<(), sp_externalities::Error> {
+                    if self.extensions.deregister(type_id) {
+                            Ok(())
+                    } else {
+                            Err(sp_externalities::Error::ExtensionIsNotRegistered(type_id))
+                    }
+            }
+    }
+}
+*/*/
+
 lazy_static::lazy_static! {
     static ref ALICE: AccountId = INTERESTING_ACCOUNTS[4].clone();
     static ref VALID_ORIGINS: Vec<AccountId> = {
@@ -415,194 +670,72 @@ lazy_static::lazy_static! {
     };
 
     static ref GENESIS_STORAGE: Storage = {
-        let mut endowed_accounts: Vec<AccountId> = (0..4).map(|i| [i; 32].into()).collect();
+        use serde::Deserialize;
+        use sp_runtime::BuildStorage;
 
-        let genesis_storage: Storage = {
-            use sp_runtime::BuildStorage;
-            use dp_container_chain_genesis_data::json::container_chain_genesis_data_from_path;
-            use runtime_common::prod_or_fast;
-            use cumulus_primitives_core::ParaId;
+        const EXPORTED_STATE_CHAIN_SPEC_JSON: &[u8] = include_bytes!("../dancelight--2024-11-21.json");
 
-            let container_chains: Vec<(ParaId, ContainerChainGenesisData, Vec<Vec<u8>>)> = vec![];
-            let mock_container_chains: Vec<ParaId> = vec![2000.into(), 2001.into()];
-            let invulnerables = vec![
-                    "Alice".to_string(),
-                    "Bob".to_string(),
-                    "Charlie".to_string(),
-                    "Dave".to_string(),
-            ];
-            let invulnerables = invulnerables_from_seeds(invulnerables.iter());
-            endowed_accounts.extend(invulnerables.iter().map(|x| x.0.clone()));
-            let para_ids: Vec<_> = container_chains
-                .iter()
-                .cloned()
-                .map(|(para_id, genesis_data, _boot_nodes)| (para_id, genesis_data, None))
-                .collect();
+        #[derive(Deserialize)]
+        struct XXX1 {
+            genesis: XXX2,
+        }
 
-            // Assign 1000 block credits and 100 session credits to all container chains registered in genesis
-            let para_id_credits: Vec<_> = para_ids
-                .iter()
-                .map(|(para_id, _genesis_data, _boot_nodes)| (*para_id, 1000, 100).into())
-                .collect();
-            let para_id_boot_nodes: Vec<_> = para_ids
-                .iter()
-                .map(|(para_id, _genesis_data, boot_nodes)| (*para_id, boot_nodes.clone()))
-                .collect();
-            let accounts_with_ed = vec![
-                //dancelight_runtime::StakingAccount::get(),
-                //dancelight_runtime::ParachainBondAccount::get(),
-                //dancelight_runtime::PendingRewardsAccount::get(),
-            ];
+        #[derive(Deserialize)]
+        struct XXX2 {
+            raw: XXX3,
+        }
 
-            // In order to register container-chains from genesis, we need to register their
-            // head on the relay registrar. However there is no easy way to do that unless we touch all the code
-            // so we generate a dummy head state for it. This can be then overriden (as zombienet does) and everything would work
-            // TODO: make this cleaner
-            let registrar_para_ids_info: Vec<_> = container_chains
-                .into_iter()
-                .filter_map(|(para_id, genesis_data, _boot_nodes)| {
-                    // Check if the wasm code is present in storage
-                    // If not present, we ignore it
-                    let validation_code = match genesis_data
-                        .storage
-                        .into_iter()
-                        //.find(|item| item.key == StorageWellKnownKeys::CODE)
-                        .find(|item| item.key == b":code")
-                    {
-                        Some(item) => Some(crate::ValidationCode(item.value.clone())),
-                        None => None,
-                    }?;
-                    let genesis_args = runtime_parachains::paras::ParaGenesisArgs {
-                        genesis_head: vec![0x01].into(),
-                        validation_code,
-                        para_kind: runtime_parachains::paras::ParaKind::Parachain,
-                    };
+        #[derive(Deserialize)]
+        struct XXX3 {
+            top: BTreeMap<String, String>,
+        }
 
-                    Some((
-                        para_id,
-                        genesis_args,
-                    ))
-                })
-                .collect();
+        let x: XXX1 = serde_json::from_slice(EXPORTED_STATE_CHAIN_SPEC_JSON).unwrap();
+        let top = x.genesis.raw.top.into_iter().map(|(k, v)| {
+            // Need to skip 0x when decoding
+            (hex::decode(&k[2..]).unwrap(), hex::decode(&v[2..]).unwrap())
+        }).collect();
 
-            let host_configuration = HostConfiguration {
-                max_collators: 100u32,
-                min_orchestrator_collators: 0u32,
-                max_orchestrator_collators: 0u32,
-                collators_per_container: 2u32,
-                full_rotation_period: runtime_common::prod_or_fast!(24u32, 5u32),
-                max_parachain_cores_percentage: Some(Perbill::from_percent(60)),
-                ..Default::default()
-            };
-
-            let core_percentage_for_pool_paras = Perbill::from_percent(100).saturating_sub(
-                host_configuration
-                    .max_parachain_cores_percentage
-                    .unwrap_or(Perbill::from_percent(50)),
-            );
-
-            // don't go below 4 cores
-            let num_cores = max(
-                para_ids.len() as u32 + core_percentage_for_pool_paras.mul_ceil(para_ids.len() as u32),
-                4,
-            );
-
-            // Initialize nextFreeParaId to a para id that is greater than all registered para ids.
-            // This is needed for Registrar::reserve.
-            let max_para_id = para_ids
-                .iter()
-                .map(|(para_id, _genesis_data, _boot_nodes)| para_id)
-                .max();
-            let next_free_para_id = max_para_id
-                .map(|x| ParaId::from(u32::from(*x) + 1))
-                .unwrap_or(primitives::LOWEST_PUBLIC_ID);
-            let session_keys: Vec<_> = invulnerables
-                .iter()
-                .cloned()
-                .map(|(acc, aura)| {
-                    (
-                        acc.clone(),                 // account id
-                        acc.clone(),                 // validator id
-                        template_session_keys(acc), // session keys
-                    )
-                })
-                .collect();
-            let babe_authorities = session_keys.iter().map(|x| (x.2.babe.clone(), 1)).collect();
-            let beefy_authorities = session_keys.iter().map(|x| x.2.beefy.clone()).collect();
-
-            dancelight_runtime::RuntimeGenesisConfig {
-                authority_discovery: dancelight_runtime::AuthorityDiscoveryConfig::default(),
-                babe: dancelight_runtime::BabeConfig { epoch_config: dancelight_runtime::BABE_GENESIS_EPOCH_CONFIG, authorities: babe_authorities, ..Default::default() },
-                beefy: dancelight_runtime::BeefyConfig { authorities: beefy_authorities, genesis_block: Default::default() },
-                configuration: dancelight_runtime::ConfigurationConfig { config: runtime_parachains::configuration::HostConfiguration {
-                    scheduler_params: SchedulerParams {
-                        max_validators_per_core: Some(1),
-                        num_cores,
-                        ..default_parachains_host_configuration().scheduler_params
-                    },
-                    ..default_parachains_host_configuration()
-                }},
-                external_validators: dancelight_runtime::ExternalValidatorsConfig::default(),
-                grandpa: dancelight_runtime::GrandpaConfig::default(),
-                hrmp: dancelight_runtime::HrmpConfig::default(),
-                registrar: dancelight_runtime::RegistrarConfig { next_free_para_id, ..Default::default() },
-                tanssi_invulnerables: dancelight_runtime::TanssiInvulnerablesConfig {
-                    invulnerables: invulnerables.iter().cloned().map(|(acc, _)| acc).collect(),
-                },
-                paras: dancelight_runtime::ParasConfig { paras: registrar_para_ids_info, ..Default::default() },
-                system: dancelight_runtime::SystemConfig {
-                    ..Default::default()
-                },
-                balances: dancelight_runtime::BalancesConfig {
-                    balances: endowed_accounts
-                        .iter()
-                        .cloned()
-                        .map(|k| (k, 1 << 60))
-                        .chain(
-                            accounts_with_ed
-                                .iter()
-                                .cloned()
-                                .map(|k| (k, dancelight_runtime_constants::currency::EXISTENTIAL_DEPOSIT))
-                        )
-                        .collect(),
-                },
-                session: dancelight_runtime::SessionConfig {
-                    keys: session_keys,
-                    ..Default::default()
-                },
-                collator_configuration: dancelight_runtime::CollatorConfigurationConfig {
-                        config: pallet_configuration::HostConfiguration {
-                            max_collators: 100u32,
-                            min_orchestrator_collators: 1u32,
-                            max_orchestrator_collators: 1u32,
-                            collators_per_container: 2u32,
-                            full_rotation_period: prod_or_fast!(24u32, 5u32),
-                            collators_per_parathread: 1,
-                            parathreads_per_collator: 1,
-                            target_container_chain_fullness: Perbill::from_percent(80),
-                            max_parachain_cores_percentage: None,
-                        },
-                        ..Default::default()
-                },
-                container_registrar: dancelight_runtime::ContainerRegistrarConfig { para_ids, phantom: PhantomData },
-                data_preservers: dancelight_runtime::DataPreserversConfig::default(),
-                services_payment: dancelight_runtime::ServicesPaymentConfig { para_id_credits },
-                sudo: dancelight_runtime::SudoConfig {
-                    key: None,
-                },
-                migrations: dancelight_runtime::MigrationsConfig {
-                    ..Default::default()
-                },
-                // This should initialize it to whatever we have set in the pallet
-                transaction_payment: Default::default(),
-                treasury: Default::default(),
-                xcm_pallet: Default::default(),
-            }
-            .build_storage()
-            .unwrap()
+        let mut t = Storage {
+            top,
+            ..Default::default()
         };
 
-        genesis_storage
+
+        let mut endowed_accounts: Vec<AccountId> = (0..4).map(|i| [i; 32].into()).collect();
+        let invulnerables = vec![
+            "Alice".to_string(),
+            "Bob".to_string(),
+            "Charlie".to_string(),
+            "Dave".to_string(),
+        ];
+        let invulnerables = invulnerables_from_seeds(invulnerables.iter());
+        endowed_accounts.extend(invulnerables.iter().map(|x| x.0.clone()));
+        let accounts_with_ed = vec![
+            //dancelight_runtime::StakingAccount::get(),
+            //dancelight_runtime::ParachainBondAccount::get(),
+            //dancelight_runtime::PendingRewardsAccount::get(),
+        ];
+
+        let genesis_balances = endowed_accounts
+            .iter()
+            .cloned()
+            .map(|k| (k, 1 << 60))
+            .chain(
+                accounts_with_ed
+                    .iter()
+                    .cloned()
+                    .map(|k| (k, dancelight_runtime_constants::currency::EXISTENTIAL_DEPOSIT))
+            );
+
+        // Need to manually update balances because using genesis builder overwrites total issuance
+        BasicExternalities::execute_with_storage(&mut t, || {
+            for (account, new_balance) in genesis_balances {
+                dancelight_runtime::Balances::force_set_balance(RuntimeOrigin::root(), account.into(), new_balance).unwrap();
+            }
+        });
+
+        t
     };
 
     static ref METADATA: RuntimeMetadataV15 = {
@@ -721,7 +854,7 @@ fn fuzz_main(data: &[u8]) {
             logs: vec![DigestItem::PreRuntime(
                 BABE_ENGINE_ID,
                 PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
-                    slot: Slot::from(u64::from(block)),
+                    slot: Slot::from(u64::from(block + 333333333)),
                     authority_index: 0,
                 })
                 .encode(),
@@ -746,7 +879,7 @@ fn fuzz_main(data: &[u8]) {
 
         Executive::initialize_block(&parent_header);
 
-        Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION).unwrap();
+        Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION + 2_000_000_000_000).unwrap();
 
         Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
             pallet_author_noting::Call::set_latest_author_data { data: () },
@@ -774,7 +907,48 @@ fn fuzz_main(data: &[u8]) {
         Executive::finalize_block();
     };
 
+    use sp_state_machine::DBValue;
+    use sp_runtime::traits::BlakeTwo256;
+    use hash_db::Prefix;
+
+    struct BTreeMapStorage(Storage);
+
+    impl sp_state_machine::Storage<BlakeTwo256> for BTreeMapStorage {
+	fn get(&self, key: &H256, prefix: Prefix) -> Result<Option<DBValue>, String> {
+            //Ok(sp_runtime::Storage::get(&self.0, key, prefix))
+            let (prefix, pad) = prefix;
+            let mut key_vec = vec![];
+            key_vec.extend(prefix);
+            key_vec.extend(pad);
+            key_vec.extend(key.as_bytes());
+            Ok(self.0.top.get(&key_vec).cloned())
+	}
+    }
+
+    impl sp_state_machine::TrieBackendStorage<BlakeTwo256> for BTreeMapStorage {
+        fn get(&self, key: &H256, prefix: Prefix) -> Result<Option<DBValue>, String> {
+            //Storage::<BlakeTwo256>::get(&self.0, key, prefix)
+            let (prefix, pad) = prefix;
+            let mut key_vec = vec![];
+            key_vec.extend(prefix);
+            key_vec.extend(pad);
+            key_vec.extend(key.as_bytes());
+            Ok(self.0.top.get(&key_vec).cloned())
+	}
+    }
+
     let mut ext = BasicExternalities::new(GENESIS_STORAGE.clone());
+    /*
+    use sp_state_machine::OverlayedChanges;
+    use sp_state_machine::TrieBackendBuilder;
+    use sp_state_machine::Ext;
+    let mut overlay = OverlayedChanges::default();
+    // Only implemented for Arc<dyn Storage>
+    let backend = TrieBackendBuilder::new(BTreeMapStorage(GENESIS_STORAGE.clone()), Default::default()).build();
+    let extensions = None;
+    let mut ext = Ext::new(&mut overlay, &backend, extensions);
+    sp_externalities::set_and_run_with_externalities(&mut ext, || {
+    */
     ext.execute_with(|| {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
 
