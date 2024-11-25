@@ -6,6 +6,16 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
+use sp_trie::GenericMemoryDB;
+use sp_trie::cache::{CacheSize, SharedTrieCache};
+use sp_state_machine::MemoryDB;
+use sp_runtime::traits::BlakeTwo256;
+use sp_storage::StateVersion;
+use sp_state_machine::LayoutV1;
+use sp_state_machine::TrieBackend;
+use sp_state_machine::TrieBackendBuilder;
+use sp_state_machine::Ext;
+use frame_support::storage::unhashed;
 use {
     cumulus_primitives_core::ParaId,
     dancelight_runtime::{
@@ -382,255 +392,38 @@ fn get_origin(origin: usize) -> &'static AccountId {
     &VALID_ORIGINS[origin % VALID_ORIGINS.len()]
 }
 
-/*
-use fuzz_externalities::FuzzExternalities;
-mod fuzz_externalities {
+use create_storage::create_storage;
+mod create_storage {
     use super::*;
+    use trie_db::TrieDBMut;
+    use trie_db::TrieDBMutBuilder;
+    use sp_state_machine::TrieMut;
     use sp_state_machine::OverlayedChanges;
-    use sp_core::Blake2Hasher;
-    use sp_externalities::Extensions;
-    use std::any::Any;
-    use sp_storage::TrackedStorageKey;
-    use sp_state_machine::LayoutV1;
-    use sp_storage::StateVersion;
-    use sp_storage::ChildInfo;
-    use trie_db::TrieConfiguration;
-    use sp_core::Hasher;
-    use sp_state_machine::LayoutV0;
-    use sp_externalities::MultiRemovalResults;
-    use sp_storage::well_known_keys::is_child_storage_key;
-    use sp_storage::StorageKey;
 
-    /// Simple Map-based Externalities impl.
-    #[derive(Debug)]
-    pub struct FuzzExternalities {
-        base: Arc<Storage>,
-        overlay: OverlayedChanges<Blake2Hasher>,
-        extensions: Extensions,
-    }
+    pub fn create_storage(mut overlay: OverlayedChanges<BlakeTwo256>, backend: TrieBackend<MemoryDB<BlakeTwo256>, BlakeTwo256>, root: H256, shared_cache: SharedTrieCache<BlakeTwo256>) -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
+        let changes = overlay.drain_storage_changes(&backend, StateVersion::V1).unwrap();
 
-    impl FuzzExternalities {
-        pub fn new(base: Arc<Storage>) -> Self {
-            Self { base, overlay: Default::default(), extensions: Default::default() }
+        let mut storage = backend.into_storage();
+        let mut cache2 = shared_cache.local_cache();
+        //let mut root_decoded: H256 = Decode::decode(&mut root1.as_slice()).unwrap();
+        let mut root_mut = root.clone();
+        let mut triedbmut: TrieDBMut<LayoutV1<BlakeTwo256>> = TrieDBMutBuilder::from_existing(&mut storage, &mut root_mut).with_optional_cache(None).build();
+
+        for (k, v) in changes.main_storage_changes {
+            if let Some(v) = v {
+                triedbmut.insert(&k, &v).unwrap();
+            } else {
+                triedbmut.remove(&k).unwrap();
+            }
         }
 
-        /// Execute the given closure while `self` is set as externalities.
-	///
-	/// Returns the result of the given closure.
-	pub fn execute_with<R>(&mut self, f: impl FnOnce() -> R) -> R {
-            sp_externalities::set_and_run_with_externalities(self, f)
-	}
+        triedbmut.commit();
 
-        pub fn execute_with_storage<R>(
-            storage: Arc<Storage>,
-            f: impl FnOnce() -> R,
-	) -> R {
-            let mut ext = Self::new(storage);
+        drop(triedbmut);
 
-            let r = ext.execute_with(f);
-
-            //*storage = ext.into_storages();
-
-            r
-	}
-    }
-
-    impl sp_externalities::Externalities for FuzzExternalities {
-	fn set_offchain_storage(&mut self, _key: &[u8], _value: Option<&[u8]>) {}
-
-	fn storage(&mut self, key: &[u8]) -> Option<StorageValue> {
-		self.overlay.storage(key).and_then(|v| v.map(|v| v.to_vec()))
-	}
-
-	fn storage_hash(&mut self, key: &[u8]) -> Option<Vec<u8>> {
-		self.storage(key).map(|v| Blake2Hasher::hash(&v).encode())
-	}
-
-	fn child_storage(&mut self, child_info: &ChildInfo, key: &[u8]) -> Option<StorageValue> {
-		self.overlay.child_storage(child_info, key).and_then(|v| v.map(|v| v.to_vec()))
-	}
-
-	fn child_storage_hash(&mut self, child_info: &ChildInfo, key: &[u8]) -> Option<Vec<u8>> {
-		self.child_storage(child_info, key).map(|v| Blake2Hasher::hash(&v).encode())
-	}
-
-	fn next_storage_key(&mut self, key: &[u8]) -> Option<StorageKey> {
-		self.overlay.iter_after(key).find_map(|(k, v)| v.value().map(|_| k.to_vec()))
-	}
-
-	fn next_child_storage_key(&mut self, child_info: &ChildInfo, key: &[u8]) -> Option<StorageKey> {
-		self.overlay
-			.child_iter_after(child_info.storage_key(), key)
-			.find_map(|(k, v)| v.value().map(|_| k.to_vec()))
-	}
-
-	fn place_storage(&mut self, key: StorageKey, maybe_value: Option<StorageValue>) {
-		if is_child_storage_key(&key) {
-			log::warn!(target: "trie", "Refuse to set child storage key via main storage");
-			return
-		}
-
-		self.overlay.set_storage(key, maybe_value)
-	}
-
-	fn place_child_storage(
-		&mut self,
-		child_info: &ChildInfo,
-		key: StorageKey,
-		value: Option<StorageValue>,
-	) {
-		self.overlay.set_child_storage(child_info, key, value);
-	}
-
-	fn kill_child_storage(
-		&mut self,
-		child_info: &ChildInfo,
-		_maybe_limit: Option<u32>,
-		_maybe_cursor: Option<&[u8]>,
-	) -> MultiRemovalResults {
-		let count = self.overlay.clear_child_storage(child_info);
-		MultiRemovalResults { maybe_cursor: None, backend: count, unique: count, loops: count }
-	}
-
-	fn clear_prefix(
-		&mut self,
-		prefix: &[u8],
-		_maybe_limit: Option<u32>,
-		_maybe_cursor: Option<&[u8]>,
-	) -> MultiRemovalResults {
-		if is_child_storage_key(prefix) {
-			warn!(
-				target: "trie",
-				"Refuse to clear prefix that is part of child storage key via main storage"
-			);
-			let maybe_cursor = Some(prefix.to_vec());
-			return MultiRemovalResults { maybe_cursor, backend: 0, unique: 0, loops: 0 }
-		}
-
-		let count = self.overlay.clear_prefix(prefix);
-		MultiRemovalResults { maybe_cursor: None, backend: count, unique: count, loops: count }
-	}
-
-	fn clear_child_prefix(
-		&mut self,
-		child_info: &ChildInfo,
-		prefix: &[u8],
-		_maybe_limit: Option<u32>,
-		_maybe_cursor: Option<&[u8]>,
-	) -> MultiRemovalResults {
-		let count = self.overlay.clear_child_prefix(child_info, prefix);
-		MultiRemovalResults { maybe_cursor: None, backend: count, unique: count, loops: count }
-	}
-
-	fn storage_append(&mut self, key: Vec<u8>, element: Vec<u8>) {
-		self.overlay.append_storage(key, element, Default::default);
-	}
-
-	fn storage_root(&mut self, state_version: StateVersion) -> Vec<u8> {
-		let mut top = self
-			.overlay
-			.changes_mut()
-			.filter_map(|(k, v)| v.value().map(|v| (k.clone(), v.clone())))
-			.collect::<BTreeMap<_, _>>();
-		// Single child trie implementation currently allows using the same child
-		// empty root for all child trie. Using null storage key until multiple
-		// type of child trie support.
-		let empty_hash = empty_child_trie_root::<LayoutV1<Blake2Hasher>>();
-		for child_info in self.overlay.children().map(|d| d.1.clone()).collect::<Vec<_>>() {
-			let child_root = self.child_storage_root(&child_info, state_version);
-			if empty_hash[..] == child_root[..] {
-				top.remove(child_info.prefixed_storage_key().as_slice());
-			} else {
-				top.insert(child_info.prefixed_storage_key().into_inner(), child_root);
-			}
-		}
-
-		match state_version {
-			StateVersion::V0 => LayoutV0::<Blake2Hasher>::trie_root(top).as_ref().into(),
-			StateVersion::V1 => LayoutV1::<Blake2Hasher>::trie_root(top).as_ref().into(),
-		}
-	}
-
-	fn child_storage_root(
-		&mut self,
-		child_info: &ChildInfo,
-		state_version: StateVersion,
-	) -> Vec<u8> {
-		if let Some((data, child_info)) = self.overlay.child_changes_mut(child_info.storage_key()) {
-			let delta =
-				data.into_iter().map(|(k, v)| (k.as_ref(), v.value().map(|v| v.as_slice())));
-			crate::in_memory_backend::new_in_mem::<Blake2Hasher>()
-				.child_storage_root(&child_info, delta, state_version)
-				.0
-		} else {
-			empty_child_trie_root::<LayoutV1<Blake2Hasher>>()
-		}
-		.encode()
-	}
-
-	fn storage_start_transaction(&mut self) {
-		self.overlay.start_transaction()
-	}
-
-	fn storage_rollback_transaction(&mut self) -> Result<(), ()> {
-		self.overlay.rollback_transaction().map_err(drop)
-	}
-
-	fn storage_commit_transaction(&mut self) -> Result<(), ()> {
-		self.overlay.commit_transaction().map_err(drop)
-	}
-
-	fn wipe(&mut self) {}
-
-	fn commit(&mut self) {}
-
-	fn read_write_count(&self) -> (u32, u32, u32, u32) {
-		unimplemented!("read_write_count is not supported in Basic")
-	}
-
-	fn reset_read_write_count(&mut self) {
-		unimplemented!("reset_read_write_count is not supported in Basic")
-	}
-
-	fn get_whitelist(&self) -> Vec<TrackedStorageKey> {
-		unimplemented!("get_whitelist is not supported in Basic")
-	}
-
-	fn set_whitelist(&mut self, _: Vec<TrackedStorageKey>) {
-		unimplemented!("set_whitelist is not supported in Basic")
-	}
-
-	fn get_read_and_written_keys(&self) -> Vec<(Vec<u8>, u32, u32, bool)> {
-		unimplemented!("get_read_and_written_keys is not supported in Basic")
-	}
-    }
-
-    impl sp_externalities::ExtensionStore for FuzzExternalities {
-            fn extension_by_type_id(&mut self, type_id: TypeId) -> Option<&mut dyn Any> {
-                    self.extensions.get_mut(type_id)
-            }
-
-            fn register_extension_with_type_id(
-                    &mut self,
-                    type_id: TypeId,
-                    extension: Box<dyn sp_externalities::Extension>,
-            ) -> Result<(), sp_externalities::Error> {
-                    self.extensions.register_with_type_id(type_id, extension)
-            }
-
-            fn deregister_extension_by_type_id(
-                    &mut self,
-                    type_id: TypeId,
-            ) -> Result<(), sp_externalities::Error> {
-                    if self.extensions.deregister(type_id) {
-                            Ok(())
-                    } else {
-                            Err(sp_externalities::Error::ExtensionIsNotRegistered(type_id))
-                    }
-            }
+        (storage, root_mut, shared_cache)
     }
 }
-*/*/
 
 lazy_static::lazy_static! {
     static ref ALICE: AccountId = INTERESTING_ACCOUNTS[4].clone();
@@ -669,7 +462,7 @@ lazy_static::lazy_static! {
         ]
     };
 
-    static ref GENESIS_STORAGE: Storage = {
+    static ref GENESIS_STORAGE: (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) = {
         use serde::Deserialize;
         use sp_runtime::BuildStorage;
 
@@ -696,7 +489,7 @@ lazy_static::lazy_static! {
             (hex::decode(&k[2..]).unwrap(), hex::decode(&v[2..]).unwrap())
         }).collect();
 
-        let mut t = Storage {
+        let t = Storage {
             top,
             ..Default::default()
         };
@@ -728,14 +521,33 @@ lazy_static::lazy_static! {
                     .map(|k| (k, dancelight_runtime_constants::currency::EXISTENTIAL_DEPOSIT))
             );
 
-        // Need to manually update balances because using genesis builder overwrites total issuance
-        BasicExternalities::execute_with_storage(&mut t, || {
+        // Create empty MemoryDB
+        let (mut storage, root): (MemoryDB<BlakeTwo256>, _) = GenericMemoryDB::default_with_root();
+
+        let mut overlay = Default::default();
+        //let cache_provider = trie_cache::CacheProvider::new();
+        let shared_cache = SharedTrieCache::new(CacheSize::new(400_000));
+        let cache = shared_cache.local_cache();
+        let mut backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+
+        let extensions = None;
+        let mut ext = Ext::new(&mut overlay, &backend, extensions);
+
+        sp_externalities::set_and_run_with_externalities(&mut ext, move || {
+            // Initialize genesis keys
+            for (k, v) in t.top {
+                unhashed::put_raw(&k, &v);
+            }
+
+            // Need to manually update balances because using genesis builder overwrites total issuance
             for (account, new_balance) in genesis_balances {
                 dancelight_runtime::Balances::force_set_balance(RuntimeOrigin::root(), account.into(), new_balance).unwrap();
             }
         });
 
-        t
+        drop(ext);
+
+        create_storage(overlay, backend, root, shared_cache)
     };
 
     static ref METADATA: RuntimeMetadataV15 = {
@@ -907,49 +719,19 @@ fn fuzz_main(data: &[u8]) {
         Executive::finalize_block();
     };
 
-    use sp_state_machine::DBValue;
     use sp_runtime::traits::BlakeTwo256;
-    use hash_db::Prefix;
 
-    struct BTreeMapStorage(Storage);
-
-    impl sp_state_machine::Storage<BlakeTwo256> for BTreeMapStorage {
-	fn get(&self, key: &H256, prefix: Prefix) -> Result<Option<DBValue>, String> {
-            //Ok(sp_runtime::Storage::get(&self.0, key, prefix))
-            let (prefix, pad) = prefix;
-            let mut key_vec = vec![];
-            key_vec.extend(prefix);
-            key_vec.extend(pad);
-            key_vec.extend(key.as_bytes());
-            Ok(self.0.top.get(&key_vec).cloned())
-	}
-    }
-
-    impl sp_state_machine::TrieBackendStorage<BlakeTwo256> for BTreeMapStorage {
-        fn get(&self, key: &H256, prefix: Prefix) -> Result<Option<DBValue>, String> {
-            //Storage::<BlakeTwo256>::get(&self.0, key, prefix)
-            let (prefix, pad) = prefix;
-            let mut key_vec = vec![];
-            key_vec.extend(prefix);
-            key_vec.extend(pad);
-            key_vec.extend(key.as_bytes());
-            Ok(self.0.top.get(&key_vec).cloned())
-	}
-    }
-
-    let mut ext = BasicExternalities::new(GENESIS_STORAGE.clone());
-    /*
     use sp_state_machine::OverlayedChanges;
     use sp_state_machine::TrieBackendBuilder;
     use sp_state_machine::Ext;
     let mut overlay = OverlayedChanges::default();
-    // Only implemented for Arc<dyn Storage>
-    let backend = TrieBackendBuilder::new(BTreeMapStorage(GENESIS_STORAGE.clone()), Default::default()).build();
+    let (storage, root, shared_cache) = &*GENESIS_STORAGE;
+    let root = *root;
+    let cache = shared_cache.local_cache();
+    let backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new_with_cache(storage, root, cache).build();
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
-    */
-    ext.execute_with(|| {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
 
         initialize_block(block);

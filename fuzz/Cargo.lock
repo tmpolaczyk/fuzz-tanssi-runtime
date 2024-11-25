@@ -3419,8 +3419,10 @@ dependencies = [
  "sp-state-machine",
  "sp-storage",
  "sp-transaction-storage-proof",
+ "sp-trie",
  "staging-xcm",
  "tp-author-noting-inherent",
+ "trie-db",
 ]
 
 [[package]]
