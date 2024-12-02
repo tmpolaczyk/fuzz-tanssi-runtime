@@ -30,7 +30,7 @@ use {
     pallet_configuration::HostConfiguration,
     parity_scale_codec::{DecodeLimit, Encode},
     polkadot_core_primitives::{BlockNumber, Signature},
-    primitives::{vstaging::SchedulerParams, ValidationCode},
+    primitives::{SchedulerParams, ValidationCode},
     sp_consensus_aura::{Slot, AURA_ENGINE_ID},
     sp_consensus_babe::{
         digests::{PreDigest, SecondaryPlainPreDigest},
