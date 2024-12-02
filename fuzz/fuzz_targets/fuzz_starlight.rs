@@ -597,6 +597,7 @@ lazy_static::lazy_static! {
                 transaction_payment: Default::default(),
                 treasury: Default::default(),
                 xcm_pallet: Default::default(),
+                ethereum_system: Default::default(),
             }
             .build_storage()
             .unwrap()
