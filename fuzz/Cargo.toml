@@ -28,10 +28,10 @@ test = false
 doc = false
 
 [dependencies]
-dancebox-runtime = { path = "../../tanssi/runtime/dancebox", default-features = false, features = [ "std", "try-runtime" ] }
-flashbox-runtime = { path = "../../tanssi/runtime/flashbox", default-features = false, features = [ "std", "try-runtime" ] }
-dancelight-runtime = { path = "../../tanssi/solo-chains/runtime/dancelight", default-features = false, features = [ "std", "try-runtime" ] }
-dancelight-runtime-constants = { path = "../../tanssi/solo-chains/runtime/dancelight/constants", default-features = false, features = [ "std" ] }
+dancebox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/dancebox", default-features = false, features = [ "std", "try-runtime" ] }
+flashbox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/flashbox", default-features = false, features = [ "std", "try-runtime" ] }
+dancelight-runtime = { path = "../../tanssi/chains/orchestrator-relays/runtime/dancelight", default-features = false, features = [ "std", "try-runtime" ] }
+dancelight-runtime-constants = { path = "../../tanssi/chains/orchestrator-relays/runtime/dancelight/constants/", default-features = false, features = [ "std" ] }
 lazy_static = "1.4.0"
 libfuzzer-sys = { version = "0.4", features = [ "arbitrary-derive" ] }
 pallet-authority-assignment = { path = "../../tanssi/pallets/authority-assignment", default-features = false }
