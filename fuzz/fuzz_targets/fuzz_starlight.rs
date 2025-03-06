@@ -678,6 +678,7 @@ fn fuzz_main(data: &[u8]) {
         .filter(|(_, _, x)| match x {
             ExtrOrPseudo::Extr(x) => !recursively_find_call(x.clone(), |call| {
                 // We filter out calls with Fungible(0) as they cause a debug crash
+		/*
                 matches!(call.clone(), RuntimeCall::XcmPallet(pallet_xcm::Call::execute { message, .. })
                     if matches!(message.as_ref(), staging_xcm::VersionedXcm::V2(staging_xcm::v2::Xcm(msg))
                         if msg.iter().any(|m| matches!(m, staging_xcm::opaque::v2::prelude::BuyExecution { fees: staging_xcm::v2::MultiAsset { fun, .. }, .. }
@@ -695,7 +696,8 @@ fn fuzz_main(data: &[u8]) {
                             if fun == &staging_xcm::v2::Fungibility::Fungible(0)
                         ))).unwrap_or(false)
                 )
-                || matches!(call.clone(), RuntimeCall::System(_))
+		*/
+                matches!(call.clone(), RuntimeCall::System(_))
                 || matches!(
                     &call,
                     RuntimeCall::Referenda(pallet_referenda::Call::submit {
@@ -758,7 +760,7 @@ fn fuzz_main(data: &[u8]) {
 
         ParaInherent::enter(
             RuntimeOrigin::none(),
-            primitives::InherentData {
+            primitives::vstaging::InherentData {
                 parent_header: grandparent_header,
                 backed_candidates: Vec::default(),
                 bitfields: Vec::default(),
@@ -795,7 +797,8 @@ fn fuzz_main(data: &[u8]) {
 
             match extrinsic {
                 ExtrOrPseudo::Extr(extrinsic) => {
-                    weight.saturating_accrue(extrinsic.get_dispatch_info().weight);
+                    weight.saturating_accrue(extrinsic.get_dispatch_info().call_weight);
+                    weight.saturating_accrue(extrinsic.get_dispatch_info().extension_weight);
                     if weight.ref_time() >= 2 * WEIGHT_REF_TIME_PER_SECOND {
                         log::warn!("Extrinsic would exhaust block weight, skipping");
                         continue;
