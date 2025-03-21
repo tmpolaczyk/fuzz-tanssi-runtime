@@ -27,87 +27,6 @@ path = "fuzz_targets/fuzz_flashbox_raw.rs"
 test = false
 doc = false
 
-[dependencies]
-#dancebox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/dancebox", default-features = false, features = [ "std", "try-runtime" ] }
-#flashbox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/flashbox", default-features = false, features = [ "std", "try-runtime" ] }
-dancelight-runtime = { path = "../../tanssi/chains/orchestrator-relays/runtime/dancelight", default-features = false, features = [ "std", "try-runtime" ] }
-dancelight-runtime-constants = { path = "../../tanssi/chains/orchestrator-relays/runtime/dancelight/constants/", default-features = false, features = [ "std" ] }
-lazy_static = "1.4.0"
-libfuzzer-sys = { version = "0.4", features = [ "arbitrary-derive" ] }
-pallet-authority-assignment = { path = "../../tanssi/pallets/authority-assignment", default-features = false }
-pallet-author-noting = { path = "../../tanssi/pallets/author-noting", default-features = false }
-pallet-configuration = { path = "../../tanssi/pallets/configuration", default-features = false }
-pallet-invulnerables = { path = "../../tanssi/pallets/invulnerables", default-features = false }
-pallet-registrar = { path = "../../tanssi/pallets/registrar", default-features = false }
-pallet-stream-payment = { path = "../../tanssi/pallets/stream-payment", default-features = false }
-tp-author-noting-inherent = { path = "../../tanssi/primitives/author-noting-inherent", default-features = false }
-dp-container-chain-genesis-data = { git = "https://github.com/moondance-labs/dancekit", branch = "tanssi-polkadot-stable2412", default-features = false, features = [ "json", "std" ] }
-
-dp-core = { git = "https://github.com/moondance-labs/dancekit", branch = "tanssi-polkadot-stable2412", default-features = false, features = [ "std" ] }
-
-runtime-parachains = { package = "polkadot-runtime-parachains", git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-primitives = { package = "polkadot-primitives", git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-polkadot-core-primitives = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-runtime-common = { package = "polkadot-runtime-common", git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-cumulus-client-parachain-inherent = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-cumulus-pallet-parachain-system = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-cumulus-primitives-core = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-cumulus-primitives-parachain-inherent = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-cumulus-test-relay-sproof-builder = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-frame-metadata = "16"
-frame-support = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2412", default-features = false }
-frame-system = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2412", default-features = false }
-nimbus-primitives = { git = "https://github.com/moondance-labs/moonkit", branch = "tanssi-polkadot-stable2412", default-features = false }
-pallet-author-inherent = { git = "https://github.com/moondance-labs/moonkit", branch = "tanssi-polkadot-stable2412", default-features = false }
-pallet-balances = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-pallet-session = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-pallet-timestamp = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-pallet-utility = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-pallet-proxy = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-pallet-multisig = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-pallet-xcm = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-pallet-referenda = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-parity-scale-codec = { version = "3.6.12", default-features = false, features = [ "derive", "max-encoded-len" ] }
-sc-chain-spec = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412" }
-sc-client-api = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-sc-service = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412" }
-sc-tracing = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412" }
-sp-consensus = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-sp-externalities = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-sp-consensus-aura = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-sp-consensus-babe = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-sp-consensus-slots = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-sp-core = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2412", default-features = false }
-sp-trie = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2412", default-features = false }
-sp-inherents = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-sp-runtime = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2412", default-features = false }
-sp-state-machine = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-sp-storage = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-sp-transaction-storage-proof = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
-staging-xcm = { default-features = false, git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", features = [ "std" ] }
-
-bitvec = { version = "1.0.1", default-features = false, features = [ "alloc" ] }
-futures = "0.3.1"
-hash-db = { version = "0.16.0", default-features = false }
-hex = "0.4.3"
-log = { version = "0.4.21", default-features = false }
-indicatif = { version = "0.17", features = [ "rayon" ] }
-rayon = "1"
-serde = { version = "1.0.197", default-features = false }
-serde_json = { version = "1", default-features = false }
-trie-db = { version = "0.29.1" }
-include_dir = "0.7.3"
-
-# quinn-proto uses cfg(fuzzing) to enable some additional code, but that code does not compile if we don't explicitly enable
-# the arbitrary feature. So add it as a dependency here, even though it is actually a dependency of some dependency
-quinn-proto = { version = "0.9.6", features = [ "arbitrary" ]}
-
-[dependencies.fuzz-tanssi-runtime]
-path = ".."
-
-[profile.release]
-debug = 1
-
 [[bin]]
 name = "fuzz_starlight"
 path = "fuzz_targets/fuzz_starlight.rs"
@@ -135,3 +54,84 @@ path = "fuzz_targets/fuzz_starlight_deposits.rs"
 test = false
 doc = false
 bench = false
+
+[dependencies]
+#dancebox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/dancebox", default-features = false, features = [ "std", "try-runtime" ] }
+#flashbox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/flashbox", default-features = false, features = [ "std", "try-runtime" ] }
+dancelight-runtime = { path = "../../tanssi/chains/orchestrator-relays/runtime/dancelight", default-features = false, features = [ "std", "try-runtime" ] }
+dancelight-runtime-constants = { path = "../../tanssi/chains/orchestrator-relays/runtime/dancelight/constants/", default-features = false, features = [ "std" ] }
+dp-container-chain-genesis-data = { git = "https://github.com/moondance-labs/dancekit", branch = "tanssi-polkadot-stable2412", default-features = false, features = [ "json", "std" ] }
+lazy_static = "1.4.0"
+libfuzzer-sys = { version = "0.4", features = [ "arbitrary-derive" ] }
+pallet-author-noting = { path = "../../tanssi/pallets/author-noting", default-features = false }
+pallet-authority-assignment = { path = "../../tanssi/pallets/authority-assignment", default-features = false }
+pallet-configuration = { path = "../../tanssi/pallets/configuration", default-features = false }
+pallet-invulnerables = { path = "../../tanssi/pallets/invulnerables", default-features = false }
+pallet-registrar = { path = "../../tanssi/pallets/registrar", default-features = false }
+pallet-stream-payment = { path = "../../tanssi/pallets/stream-payment", default-features = false }
+tp-author-noting-inherent = { path = "../../tanssi/primitives/author-noting-inherent", default-features = false }
+
+dp-core = { git = "https://github.com/moondance-labs/dancekit", branch = "tanssi-polkadot-stable2412", default-features = false, features = [ "std" ] }
+
+cumulus-client-parachain-inherent = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+cumulus-pallet-parachain-system = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+cumulus-primitives-core = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+cumulus-primitives-parachain-inherent = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+cumulus-test-relay-sproof-builder = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+frame-metadata = "16"
+frame-support = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2412", default-features = false }
+frame-system = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2412", default-features = false }
+nimbus-primitives = { git = "https://github.com/moondance-labs/moonkit", branch = "tanssi-polkadot-stable2412", default-features = false }
+pallet-author-inherent = { git = "https://github.com/moondance-labs/moonkit", branch = "tanssi-polkadot-stable2412", default-features = false }
+pallet-balances = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+pallet-multisig = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+pallet-proxy = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+pallet-referenda = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+pallet-session = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+pallet-timestamp = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+pallet-utility = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+pallet-xcm = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+parity-scale-codec = { version = "3.6.12", default-features = false, features = [ "derive", "max-encoded-len" ] }
+polkadot-core-primitives = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+primitives = { package = "polkadot-primitives", git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+runtime-common = { package = "polkadot-runtime-common", git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+runtime-parachains = { package = "polkadot-runtime-parachains", git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+sc-chain-spec = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412" }
+sc-client-api = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+sc-service = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412" }
+sc-tracing = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412" }
+sp-consensus = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+sp-consensus-aura = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+sp-consensus-babe = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+sp-consensus-slots = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+sp-core = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2412", default-features = false }
+sp-externalities = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+sp-inherents = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+sp-runtime = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2412", default-features = false }
+sp-state-machine = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+sp-storage = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+sp-transaction-storage-proof = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false }
+sp-trie = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2412", default-features = false }
+staging-xcm = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2412", default-features = false, features = [ "std" ] }
+
+bitvec = { version = "1.0.1", default-features = false, features = [ "alloc" ] }
+futures = "0.3.1"
+hash-db = { version = "0.16.0", default-features = false }
+hex = "0.4.3"
+include_dir = "0.7.3"
+indicatif = { version = "0.17", features = [ "rayon" ] }
+log = { version = "0.4.21", default-features = false }
+rayon = "1"
+serde = { version = "1.0.197", default-features = false }
+serde_json = { version = "1", default-features = false }
+trie-db = { version = "0.29.1" }
+quinn-proto = { version = "0.9.6", features = [ "arbitrary" ] }
+
+[dependencies.
+# quinn-proto uses cfg(fuzzing) to enable some additional code, but that code does not compile if we don't explicitly enable
+# the arbitrary feature. So add it as a dependency here, even though it is actually a dependency of some dependency
+fuzz-tanssi-runtime]
+path = ".."
+
+[profile.release]
+debug = 1
