@@ -166,20 +166,17 @@ jobs:
                 sudo apt-get install -y protobuf-compiler
             - name: Install cargo-fuzz
               # Use custom version from github because the latest release is too old
-              run: cargo install cargo-fuzz --git https://github.com/rust-fuzz/cargo-fuzz --rev a860fd92bc183f1fed45583aa78691b684e80576
+              run: cargo install cargo-fuzz --git https://github.com/rust-fuzz/cargo-fuzz --rev 65e3279c9602375037cb3aaabd3209c5b746375c
             - name: Build
               run: |
                 cd fuzz
-                SKIP_WASM_BUILD=1 cargo fuzz build fuzz_raw --build-std
-                strip target/x86_64-unknown-linux-gnu/release/fuzz_raw
-                SKIP_WASM_BUILD=1 cargo fuzz build fuzz_flashbox_raw --build-std
-                strip target/x86_64-unknown-linux-gnu/release/fuzz_flashbox_raw
+                SKIP_WASM_BUILD=1 cargo fuzz build fuzz_starlight --build-std
+                strip target/x86_64-unknown-linux-gnu/release/fuzz_starlight
                 cd ..
                 mkdir binaries
-                mv fuzz/target/x86_64-unknown-linux-gnu/release/fuzz_raw binaries/
-                mv fuzz/target/x86_64-unknown-linux-gnu/release/fuzz_flashbox_raw binaries/
+                mv fuzz/target/x86_64-unknown-linux-gnu/release/fuzz_starlight binaries/
             - name: Upload binary
-              uses: actions/upload-artifact@v3.1.2
+              uses: actions/upload-artifact@v4
               with:
                   name: binaries
                   path: binaries
@@ -196,10 +193,11 @@ jobs:
               uses: actions/checkout@v3
               with:
                   ref: ${{ needs.set-tags.outputs.git_ref }}
-            - uses: actions/download-artifact@v3.0.2
+            - uses: actions/download-artifact@v4
               with:
                   name: binaries
                   path: build
+                  merge-multiple: true
             - name: Prepare
               id: prep
               run: |

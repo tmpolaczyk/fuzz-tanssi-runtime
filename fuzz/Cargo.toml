@@ -28,8 +28,8 @@ test = false
 doc = false
 
 [dependencies]
-dancebox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/dancebox", default-features = false, features = [ "std", "try-runtime" ] }
-flashbox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/flashbox", default-features = false, features = [ "std", "try-runtime" ] }
+#dancebox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/dancebox", default-features = false, features = [ "std", "try-runtime" ] }
+#flashbox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/flashbox", default-features = false, features = [ "std", "try-runtime" ] }
 dancelight-runtime = { path = "../../tanssi/chains/orchestrator-relays/runtime/dancelight", default-features = false, features = [ "std", "try-runtime" ] }
 dancelight-runtime-constants = { path = "../../tanssi/chains/orchestrator-relays/runtime/dancelight/constants/", default-features = false, features = [ "std" ] }
 lazy_static = "1.4.0"
