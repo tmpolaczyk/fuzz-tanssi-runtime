@@ -671,196 +671,23 @@ fn fuzz_main(data: &[u8]) {
     // Uncomment to init logger
     *LOGGER;
     //println!("data: {:?}", data);
-    let mut extrinsic_data = data;
-    //#[allow(deprecated)]
-    let extrinsics: Vec<(/* lapse */ u8, /* origin */ u8, ExtrOrPseudo)> =
-        iter::from_fn(|| DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
-        .filter(|(_, _, x)| match x {
-            ExtrOrPseudo::Extr(x) => !recursively_find_call(x.clone(), |call| {
-                // We filter out calls with Fungible(0) as they cause a debug crash
-		/*
-                matches!(call.clone(), RuntimeCall::XcmPallet(pallet_xcm::Call::execute { message, .. })
-                    if matches!(message.as_ref(), staging_xcm::VersionedXcm::V2(staging_xcm::v2::Xcm(msg))
-                        if msg.iter().any(|m| matches!(m, staging_xcm::opaque::v2::prelude::BuyExecution { fees: staging_xcm::v2::MultiAsset { fun, .. }, .. }
-                            if fun == &staging_xcm::v2::Fungibility::Fungible(0)
-                        )
-                    )) || matches!(message.as_ref(), staging_xcm::VersionedXcm::V3(staging_xcm::v3::Xcm(msg))
-                        if msg.iter().any(|m| matches!(m, staging_xcm::opaque::v3::prelude::BuyExecution { weight_limit: staging_xcm::opaque::v3::WeightLimit::Limited(weight), .. }
-                            if weight.ref_time() <= 1
-                        ))
-                    )
-                )
-                || matches!(call.clone(), RuntimeCall::XcmPallet(pallet_xcm::Call::transfer_assets_using_type_and_then { assets, ..})
-                    if staging_xcm::v2::MultiAssets::try_from(*assets.clone())
-                        .map(|assets| assets.inner().iter().any(|a| matches!(a, staging_xcm::v2::MultiAsset { fun, .. }
-                            if fun == &staging_xcm::v2::Fungibility::Fungible(0)
-                        ))).unwrap_or(false)
-                )
-		*/
-                matches!(call.clone(), RuntimeCall::System(_))
-                || matches!(
-                    &call,
-                    RuntimeCall::Referenda(pallet_referenda::Call::submit {
-                        proposal_origin: matching_origin,
-                        ..
-                    }) if RuntimeOrigin::from(*matching_origin.clone()).caller() == RuntimeOrigin::root().caller()
-                )
-            }),
-            ExtrOrPseudo::Pseudo(x) => true,
-        })
-            .collect();
+    let mut data = data;
+    let size = data.len();
+    use parity_scale_codec::DecodeAll;
 
-    if extrinsics.is_empty() {
-        return;
+    let x: pallet_stream_payment::StreamOf::<Runtime> = match DecodeAll::decode_all(&mut data) {
+        Ok(x) => x,
+        Err(_e) => return,
+    };
+
+    let new_size = x.encode().len();
+
+    let max_size = 253;
+    if new_size > max_size {
+        println!("new size: {}", new_size);
     }
-
-    let mut block: u32 = 1;
-    let mut weight: Weight = Weight::zero();
-    let mut elapsed: Duration = Duration::ZERO;
-
-    let initialize_block = |block: u32| {
-        log::debug!(target: "fuzz::initialize", "\ninitializing block {block}");
-
-        let pre_digest = Digest {
-            logs: vec![DigestItem::PreRuntime(
-                BABE_ENGINE_ID,
-                PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
-                    slot: Slot::from(u64::from(block)),
-                    authority_index: 0,
-                })
-                .encode(),
-            )],
-        };
-
-        let grandparent_header = Header::new(
-            block,
-            H256::default(),
-            H256::default(),
-            <frame_system::Pallet<Runtime>>::parent_hash(),
-            pre_digest.clone(),
-        );
-
-        let parent_header = Header::new(
-            block,
-            H256::default(),
-            H256::default(),
-            grandparent_header.hash(),
-            pre_digest,
-        );
-
-        Executive::initialize_block(&parent_header);
-
-        Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION).unwrap();
-
-        Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
-            pallet_author_noting::Call::set_latest_author_data { data: () },
-        )))
-        .unwrap()
-        .unwrap();
-
-        ParaInherent::enter(
-            RuntimeOrigin::none(),
-            primitives::vstaging::InherentData {
-                parent_header: grandparent_header,
-                backed_candidates: Vec::default(),
-                bitfields: Vec::default(),
-                disputes: Vec::default(),
-            },
-        )
-        .unwrap();
-    };
-
-    let finalize_block = |elapsed: Duration| {
-        log::debug!(target: "fuzz::time", "\n  time spent: {elapsed:?}");
-        assert!(elapsed.as_secs() <= 2, "block execution took too much time");
-
-        log::debug!(target: "fuzz::finalize", "  finalizing block");
-        Executive::finalize_block();
-    };
-
-    let mut ext = BasicExternalities::new(GENESIS_STORAGE.clone());
-    ext.execute_with(|| {
-        let initial_total_issuance = TotalIssuance::<Runtime>::get();
-
-        initialize_block(block);
-
-        for (lapse, origin, extrinsic) in extrinsics {
-            if lapse > 0 {
-                finalize_block(elapsed);
-
-                block += u32::from(lapse) * 393; // 393 * 256 = 100608 which nearly corresponds to a week
-                weight = 0.into();
-                elapsed = Duration::ZERO;
-
-                initialize_block(block);
-            }
-
-            match extrinsic {
-                ExtrOrPseudo::Extr(extrinsic) => {
-                    weight.saturating_accrue(extrinsic.get_dispatch_info().call_weight);
-                    weight.saturating_accrue(extrinsic.get_dispatch_info().extension_weight);
-                    if weight.ref_time() >= 2 * WEIGHT_REF_TIME_PER_SECOND {
-                        log::warn!("Extrinsic would exhaust block weight, skipping");
-                        continue;
-                    }
-
-                    let origin = if origin == 0 {
-                        // Check if this extrinsic can be called by root, if not return a Signed origin
-                        if root_can_call(&extrinsic) {
-                            RuntimeOrigin::root()
-                        } else {
-                            RuntimeOrigin::signed(get_origin(origin.into()).clone())
-                        }
-                    } else {
-                        RuntimeOrigin::signed(get_origin(origin.into()).clone())
-                    };
-
-                    log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
-                    log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
-
-                    let now = Instant::now(); // We get the current time for timing purposes.
-                    #[allow(unused_variables)]
-                    let res = extrinsic.clone().dispatch(origin);
-                    elapsed += now.elapsed();
-
-                    log::debug!(target: "fuzz::result", "    result:     {res:?}");
-                }
-                ExtrOrPseudo::Pseudo(fuzz_call) => {
-                    match fuzz_call {
-                        // Set relay data and start a new block
-                        FuzzRuntimeCall::SetRelayData(x) => {
-                            // Disabled
-                            continue;
-                        }
-                        FuzzRuntimeCall::CallRuntimeApi(x) => {
-                            // Disabled because anything related to block building will panic
-                            continue;
-                        }
-                        FuzzRuntimeCall::RecvEthMsg(x) => {
-                            // Unimplemented
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-
-        finalize_block(elapsed);
-
-        check_invariants(block, initial_total_issuance);
-    });
+    assert!(new_size <= max_size);
+    assert_eq!(size, new_size);
 }
 
 libfuzzer_sys::fuzz_target!(|data: &[u8]| { fuzz_main(data) });
-
-libfuzzer_sys::fuzz_mutator!(
-    |data: &mut [u8], size: usize, max_size: usize, _seed: u32| {
-        let mut data = data;
-        let cap = data.len();
-        let new_size = libfuzzer_sys::fuzzer_mutate(&mut data, size, cap);
-        mutate_interesting_accounts(&mut data[..new_size]);
-        mutate_interesting_para_ids(&mut data[..new_size]);
-
-        new_size
-    }
-);

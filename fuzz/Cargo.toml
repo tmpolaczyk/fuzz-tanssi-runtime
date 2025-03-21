@@ -39,6 +39,7 @@ pallet-author-noting = { path = "../../tanssi/pallets/author-noting", default-fe
 pallet-configuration = { path = "../../tanssi/pallets/configuration", default-features = false }
 pallet-invulnerables = { path = "../../tanssi/pallets/invulnerables", default-features = false }
 pallet-registrar = { path = "../../tanssi/pallets/registrar", default-features = false }
+pallet-stream-payment = { path = "../../tanssi/pallets/stream-payment", default-features = false }
 tp-author-noting-inherent = { path = "../../tanssi/primitives/author-noting-inherent", default-features = false }
 dp-container-chain-genesis-data = { git = "https://github.com/moondance-labs/dancekit", branch = "tanssi-polkadot-stable2412", default-features = false, features = [ "json", "std" ] }
 
@@ -124,6 +125,13 @@ bench = false
 [[bin]]
 name = "fuzz_starlight_live"
 path = "fuzz_targets/fuzz_starlight_live.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_starlight_deposits"
+path = "fuzz_targets/fuzz_starlight_deposits.rs"
 test = false
 doc = false
 bench = false
