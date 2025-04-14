@@ -905,6 +905,7 @@ fn fuzz_init() {
 
 libfuzzer_sys::fuzz_target!(init: fuzz_init(), |data: &[u8]| fuzz_main(data));
 
+/*
 libfuzzer_sys::fuzz_mutator!(
     |data: &mut [u8], size: usize, max_size: usize, _seed: u32| {
         let mut data = data;
@@ -916,3 +917,4 @@ libfuzzer_sys::fuzz_mutator!(
         new_size
     }
 );
+*/
