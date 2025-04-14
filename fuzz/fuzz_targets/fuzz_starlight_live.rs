@@ -22,6 +22,7 @@ use sp_state_machine::TrieBackend;
 use sp_state_machine::TrieBackendBuilder;
 use sp_state_machine::Ext;
 use frame_support::storage::unhashed;
+use std::sync::atomic::AtomicBool;
 use {
     cumulus_primitives_core::ParaId,
     dancelight_runtime::{
@@ -620,6 +621,8 @@ lazy_static::lazy_static! {
     static ref LOGGER: () = init_logger();
 }
 
+static EXPORTED_STORAGE: AtomicBool = AtomicBool::new(false);
+
 fn fuzz_main(data: &[u8]) {
     // Uncomment to init logger
     *LOGGER;
@@ -680,7 +683,7 @@ fn fuzz_main(data: &[u8]) {
             logs: vec![DigestItem::PreRuntime(
                 BABE_ENGINE_ID,
                 PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
-                    slot: Slot::from(u64::from(block + 333333333)),
+                    slot: Slot::from(u64::from(block + 350000000)),
                     authority_index: 0,
                 })
                 .encode(),
@@ -729,7 +732,7 @@ fn fuzz_main(data: &[u8]) {
 
         Executive::initialize_block(&parent_header);
 
-        Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION + 2_000_000_000_000).unwrap();
+        Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION + 2_100_000_000_000).unwrap();
 
         Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
             pallet_author_noting::Call::set_latest_author_data { data: () },
@@ -773,6 +776,60 @@ fn fuzz_main(data: &[u8]) {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
 
         initialize_block(block);
+
+        // Uncomment to enable exporting storage to hex snapshot file
+        // Useful to avoid running runtime upgrade every time, just export the state after the runtime upgrade
+        /*
+        if EXPORTED_STORAGE.load(std::sync::atomic::Ordering::SeqCst) == false {
+            use std::fs::File;
+            use std::io::Write;
+
+            // TODO: create enough blocks to ensure migrations have finished
+            for _ in 0..3 {
+                finalize_block(elapsed);
+
+                block += 1;
+                weight = 0.into();
+                elapsed = Duration::ZERO;
+
+                initialize_block(block);
+            }
+            finalize_block(elapsed);
+
+            let all_key_values = {
+                let mut res = vec![];
+                let mut prefix = vec![];
+                while let Some(key) = sp_io::storage::next_key(&prefix) {
+                    let value = frame_support::storage::unhashed::get_raw(&key).unwrap();
+                    let key = key.to_vec();
+                    prefix = key.clone();
+
+                    res.push((key, value));
+                }
+
+                res
+            };
+
+            let output_file_path = "fuzz_starlight_live_export_state.hexsnap.txt";
+            let mut output_file = File::create(output_file_path).inspect_err(|e| {
+                log::error!("Failed to create output file: {}", e);
+            }).unwrap();
+
+            for (key, value) in all_key_values {
+                writeln!(
+                    output_file,
+                    "\"0x{}\": \"0x{}\",",
+                    hex::encode(&key),
+                    hex::encode(&value)
+                ).expect("failed to writeln");
+            }
+            output_file.flush().unwrap();
+            log::info!("Exported hex snapshot to file {}", output_file_path);
+
+            EXPORTED_STORAGE.store(true, std::sync::atomic::Ordering::SeqCst);
+            return;
+        }
+        */
 
         for (lapse, origin, extrinsic) in extrinsics {
             for _ in 0..lapse {

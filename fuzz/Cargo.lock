@@ -3293,6 +3293,7 @@ dependencies = [
  "sp-core",
  "sp-externalities",
  "sp-inherents",
+ "sp-io",
  "sp-runtime",
  "sp-state-machine",
  "sp-storage",
