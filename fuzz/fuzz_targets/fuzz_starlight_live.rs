@@ -6,6 +6,12 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
+use dancelight_runtime::ExternalValidators;
+use dancelight_runtime::CollatorsInflationRatePerBlock;
+use dancelight_runtime::ValidatorsInflationRatePerEra;
+use dancelight_runtime::ContainerRegistrar;
+use frame_support::traits::Currency;
+use dancelight_runtime::InflationRewards;
 use sp_trie::GenericMemoryDB;
 use sp_trie::cache::{CacheSize, SharedTrieCache};
 use sp_state_machine::MemoryDB;
@@ -196,7 +202,7 @@ where
 ///
 /// The input must be a tuple of individual keys (a single arg for now since we have just one key).
 pub fn template_session_keys(account: AccountId) -> dancelight_runtime::SessionKeys {
-    let authority_keys = get_authority_keys_from_seed(&account.to_string(), None);
+    let authority_keys = get_authority_keys_from_seed(&account.to_string());
 
     dancelight_runtime::SessionKeys {
         babe: authority_keys.babe.clone(),
@@ -274,7 +280,7 @@ fn default_parachains_host_configuration(
     }
 }
 
-fn check_invariants(block: u32, initial_total_issuance: Balance) {
+fn check_invariants(block: u32, initial_total_issuance: Balance, block_rewards: u128) {
     // After execution of all blocks, we run invariants
     let mut counted_free = 0;
     let mut counted_reserved = 0;
@@ -305,7 +311,6 @@ fn check_invariants(block: u32, initial_total_issuance: Balance) {
         );
     }
     // TODO: Total issuance is wrong, even if we don't add any balances on genesis
-    /*
     let total_issuance = TotalIssuance::<Runtime>::get();
     let counted_issuance = counted_free + counted_reserved;
     assert!(
@@ -313,13 +318,18 @@ fn check_invariants(block: u32, initial_total_issuance: Balance) {
         "Inconsistent total issuance: {total_issuance} but counted {counted_issuance}"
     );
     assert!(
-        total_issuance <= initial_total_issuance,
-        "Total issuance {total_issuance} greater than initial issuance {initial_total_issuance}"
+        total_issuance <= initial_total_issuance.saturating_add(block_rewards),
+        "Total issuance {total_issuance} greater than initial issuance {initial_total_issuance} + block rewards {block_rewards}"
     );
-    */
     // We run all developer-defined integrity tests
     AllPalletsWithSystem::integrity_test();
     AllPalletsWithSystem::try_state(block, TryStateSelect::All).unwrap();
+
+    // Testing, ensure snapshot import is correct, print top 100 staking candidates
+    //let st100 = pallet_pooled_staking::SortedEligibleCandidates::<Runtime>::get();
+    //log::info!("{:?}", st100);
+    //let st100: Vec<_> = pallet_registrar::ParaGenesisData::<Runtime>::iter().collect();
+    //log::info!("{:?}", st100);
 }
 
 /// Helper function to turn a list of names into a list of `AccountId`
@@ -466,7 +476,7 @@ lazy_static::lazy_static! {
         use serde::Deserialize;
         use sp_runtime::BuildStorage;
 
-        const EXPORTED_STATE_CHAIN_SPEC_JSON: &[u8] = include_bytes!("../dancelight--2024-11-21.json");
+        const EXPORTED_STATE_CHAIN_SPEC_JSON: &[u8] = include_bytes!("../dancelight-2025-04-12.json");
 
         #[derive(Deserialize)]
         struct XXX1 {
@@ -621,6 +631,7 @@ fn fuzz_main(data: &[u8]) {
         .filter(|(_, _, x)| match x {
             ExtrOrPseudo::Extr(x) => !recursively_find_call(x.clone(), |call| {
                 // We filter out calls with Fungible(0) as they cause a debug crash
+               /*
                 matches!(call.clone(), RuntimeCall::XcmPallet(pallet_xcm::Call::execute { message, .. })
                     if matches!(message.as_ref(), staging_xcm::VersionedXcm::V2(staging_xcm::v2::Xcm(msg))
                         if msg.iter().any(|m| matches!(m, staging_xcm::opaque::v2::prelude::BuyExecution { fees: staging_xcm::v2::MultiAsset { fun, .. }, .. }
@@ -638,7 +649,8 @@ fn fuzz_main(data: &[u8]) {
                             if fun == &staging_xcm::v2::Fungibility::Fungible(0)
                         ))).unwrap_or(false)
                 )
-                || matches!(call.clone(), RuntimeCall::System(_))
+               */
+                matches!(call.clone(), RuntimeCall::System(_))
                 || matches!(
                     &call,
                     RuntimeCall::Referenda(pallet_referenda::Call::submit {
@@ -658,6 +670,8 @@ fn fuzz_main(data: &[u8]) {
     let mut block: u32 = 1;
     let mut weight: Weight = Weight::zero();
     let mut elapsed: Duration = Duration::ZERO;
+    let mut block_rewards: Cell<u128> = Cell::new(0);
+    let mut last_era: Cell<u32> = Cell::new(0);
 
     let initialize_block = |block: u32| {
         log::debug!(target: "fuzz::initialize", "\ninitializing block {block}");
@@ -689,6 +703,30 @@ fn fuzz_main(data: &[u8]) {
             pre_digest,
         );
 
+        // Calculate max expected supply increase
+        {
+            let registered_para_ids = ContainerRegistrar::registered_para_ids();
+            if !registered_para_ids.is_empty() {
+                let new_supply_inflation_rewards =
+                    CollatorsInflationRatePerBlock::get() * Balances::total_issuance();
+                block_rewards.set(block_rewards.get() + new_supply_inflation_rewards);
+            }
+
+            if last_era.get() == 0 {
+                let era_index = ExternalValidators::current_era().unwrap();
+                last_era.set(era_index);
+            }
+            let era_index = ExternalValidators::current_era().unwrap();
+            let mut new_era = false;
+            if era_index > last_era.get() {
+                new_era = true;
+            }
+            if new_era {
+                let new_supply_validators = ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
+                block_rewards.set(block_rewards.get() + new_supply_validators);
+            }
+        }
+
         Executive::initialize_block(&parent_header);
 
         Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION + 2_000_000_000_000).unwrap();
@@ -701,7 +739,7 @@ fn fuzz_main(data: &[u8]) {
 
         ParaInherent::enter(
             RuntimeOrigin::none(),
-            primitives::InherentData {
+            primitives::vstaging::InherentData {
                 parent_header: grandparent_header,
                 backed_candidates: Vec::default(),
                 bitfields: Vec::default(),
@@ -737,10 +775,10 @@ fn fuzz_main(data: &[u8]) {
         initialize_block(block);
 
         for (lapse, origin, extrinsic) in extrinsics {
-            if lapse > 0 {
+            for _ in 0..lapse {
                 finalize_block(elapsed);
 
-                block += u32::from(lapse) * 393; // 393 * 256 = 100608 which nearly corresponds to a week
+                block += 1;
                 weight = 0.into();
                 elapsed = Duration::ZERO;
 
@@ -749,7 +787,8 @@ fn fuzz_main(data: &[u8]) {
 
             match extrinsic {
                 ExtrOrPseudo::Extr(extrinsic) => {
-                    weight.saturating_accrue(extrinsic.get_dispatch_info().weight);
+                    weight.saturating_accrue(extrinsic.get_dispatch_info().call_weight);
+                    weight.saturating_accrue(extrinsic.get_dispatch_info().extension_weight);
                     if weight.ref_time() >= 2 * WEIGHT_REF_TIME_PER_SECOND {
                         log::warn!("Extrinsic would exhaust block weight, skipping");
                         continue;
@@ -798,7 +837,7 @@ fn fuzz_main(data: &[u8]) {
 
         finalize_block(elapsed);
 
-        check_invariants(block, initial_total_issuance);
+        check_invariants(block, initial_total_issuance, block_rewards.get());
     });
 }
 

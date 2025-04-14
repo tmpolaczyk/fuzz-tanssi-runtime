@@ -56,9 +56,9 @@ doc = false
 bench = false
 
 [dependencies]
-#dancebox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/dancebox", default-features = false, features = [ "std", "try-runtime" ] }
-#flashbox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/flashbox", default-features = false, features = [ "std", "try-runtime" ] }
-dancelight-runtime = { path = "../../tanssi/chains/orchestrator-relays/runtime/dancelight", default-features = false, features = [ "std", "try-runtime" ] }
+#dancebox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/dancebox", default-features = false, features = [ "std", "try-runtime", "fast-runtime" ] }
+#flashbox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/flashbox", default-features = false, features = [ "std", "try-runtime", "fast-runtime" ] }
+dancelight-runtime = { path = "../../tanssi/chains/orchestrator-relays/runtime/dancelight", default-features = false, features = [ "std", "try-runtime", "fast-runtime" ] }
 dancelight-runtime-constants = { path = "../../tanssi/chains/orchestrator-relays/runtime/dancelight/constants/", default-features = false, features = [ "std" ] }
 dp-container-chain-genesis-data = { git = "https://github.com/moondance-labs/dancekit", branch = "tanssi-polkadot-stable2412", default-features = false, features = [ "json", "std" ] }
 lazy_static = "1.4.0"
@@ -67,6 +67,7 @@ pallet-author-noting = { path = "../../tanssi/pallets/author-noting", default-fe
 pallet-authority-assignment = { path = "../../tanssi/pallets/authority-assignment", default-features = false }
 pallet-configuration = { path = "../../tanssi/pallets/configuration", default-features = false }
 pallet-invulnerables = { path = "../../tanssi/pallets/invulnerables", default-features = false }
+pallet-pooled-staking = { path = "../../tanssi/pallets/pooled-staking", default-features = false }
 pallet-registrar = { path = "../../tanssi/pallets/registrar", default-features = false }
 pallet-stream-payment = { path = "../../tanssi/pallets/stream-payment", default-features = false }
 tp-author-noting-inherent = { path = "../../tanssi/primitives/author-noting-inherent", default-features = false }
@@ -127,10 +128,9 @@ serde_json = { version = "1", default-features = false }
 trie-db = { version = "0.29.1" }
 quinn-proto = { version = "0.9.6", features = [ "arbitrary" ] }
 
-[dependencies.
 # quinn-proto uses cfg(fuzzing) to enable some additional code, but that code does not compile if we don't explicitly enable
 # the arbitrary feature. So add it as a dependency here, even though it is actually a dependency of some dependency
-fuzz-tanssi-runtime]
+[dependencies.fuzz-tanssi-runtime]
 path = ".."
 
 [profile.release]
