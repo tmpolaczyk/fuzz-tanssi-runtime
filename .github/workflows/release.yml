@@ -85,7 +85,7 @@ jobs:
 
     ####### Static Analyses #######
     cargo-clippy:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-22.04
         needs: ["set-tags"]
         steps:
             - name: Checkout
@@ -113,7 +113,7 @@ jobs:
                 SKIP_WASM_BUILD=1 env -u RUSTFLAGS cargo clippy --all-targets --locked --workspace
 
     toml-formatting:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-22.04
         needs: ["set-tags"]
         steps:
             - name: Checkout
@@ -133,7 +133,7 @@ jobs:
     ####### Building and Testing binaries #######
 
     build:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-22.04
         needs: ["set-tags"]
         env:
             TMP_TARGET: "/tmp/target"
@@ -185,7 +185,7 @@ jobs:
                   path: binaries
 
     docker-tanssi:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-22.04
         needs: ["set-tags", "build"]
         strategy:
             matrix:
