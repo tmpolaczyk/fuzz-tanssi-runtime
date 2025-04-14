@@ -721,12 +721,15 @@ fn fuzz_main(data: &[u8]) {
     let initialize_block = |block: u32| {
         log::debug!(target: "fuzz::initialize", "\ninitializing block {block}");
 
+        let validators = dancelight_runtime::Session::validators();
+        let slot = Slot::from(u64::from(block));
+        let authority_index = u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
         let pre_digest = Digest {
             logs: vec![DigestItem::PreRuntime(
                 BABE_ENGINE_ID,
                 PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
-                    slot: Slot::from(u64::from(block)),
-                    authority_index: 0,
+                    slot,
+                    authority_index,
                 })
                 .encode(),
             )],
