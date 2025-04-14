@@ -617,15 +617,9 @@ fn init_logger() {
     logger.init().unwrap();
 }
 
-lazy_static::lazy_static! {
-    static ref LOGGER: () = init_logger();
-}
-
 static EXPORTED_STORAGE: AtomicBool = AtomicBool::new(false);
 
 fn fuzz_main(data: &[u8]) {
-    // Uncomment to init logger
-    *LOGGER;
     //println!("data: {:?}", data);
     let mut extrinsic_data = data;
     //#[allow(deprecated)]
@@ -901,7 +895,15 @@ fn fuzz_main(data: &[u8]) {
     });
 }
 
-libfuzzer_sys::fuzz_target!(|data: &[u8]| { fuzz_main(data) });
+fn fuzz_init() {
+    // Uncomment to init logger
+    init_logger();
+
+    // Initialize genesis storage
+    &*GENESIS_STORAGE;
+}
+
+libfuzzer_sys::fuzz_target!(init: fuzz_init(), |data: &[u8]| fuzz_main(data));
 
 libfuzzer_sys::fuzz_mutator!(
     |data: &mut [u8], size: usize, max_size: usize, _seed: u32| {
