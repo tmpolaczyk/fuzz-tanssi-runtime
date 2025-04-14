@@ -171,10 +171,13 @@ jobs:
               run: |
                 cd fuzz
                 SKIP_WASM_BUILD=1 cargo fuzz build fuzz_starlight --build-std
+                SKIP_WASM_BUILD=1 cargo fuzz build fuzz_starlight_live --build-std
                 strip target/x86_64-unknown-linux-gnu/release/fuzz_starlight
+                strip target/x86_64-unknown-linux-gnu/release/fuzz_starlight_live
                 cd ..
                 mkdir binaries
                 mv fuzz/target/x86_64-unknown-linux-gnu/release/fuzz_starlight binaries/
+                mv fuzz/target/x86_64-unknown-linux-gnu/release/fuzz_starlight_live binaries/
             - name: Upload binary
               uses: actions/upload-artifact@v4
               with:
