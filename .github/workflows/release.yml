@@ -9,7 +9,7 @@ on:
 
 jobs:
     set-tags:
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-22.04
         outputs:
             image_exists: ${{ steps.check-docker-image.outputs.image_exists }}
             git_ref: ${{ steps.check-git-ref.outputs.git_ref }}
