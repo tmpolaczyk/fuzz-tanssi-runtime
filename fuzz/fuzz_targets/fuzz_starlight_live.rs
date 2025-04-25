@@ -103,7 +103,7 @@ fn root_can_call(call: &RuntimeCall) -> bool {
     match call {
         // Allow root to call any pallet_registrar extrinsic, as it is unlikely to brick the chain
         // TODO: except register(1000), because that may actually break some things
-        RuntimeCall::Registrar(..) => true,
+        RuntimeCall::ContainerRegistrar(..) => true,
         // Allow root to call pallet_author_noting killAuthorData
         RuntimeCall::AuthorNoting(pallet_author_noting::pallet::Call::kill_author_data {
             ..
@@ -763,16 +763,56 @@ fn fuzz_main(data: &[u8]) {
     use sp_state_machine::TrieBackendBuilder;
     use sp_state_machine::Ext;
     let mut overlay = OverlayedChanges::default();
-    let (storage, root, shared_cache) = &*GENESIS_STORAGE;
+    let (storage, root, _shared_cache) = &*GENESIS_STORAGE;
     let root = *root;
-    let cache = shared_cache.local_cache();
-    let backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+    let backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new(storage, root).build();
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
 
-        initialize_block(block);
+        /*
+        if EXPORTED_STORAGE.load(std::sync::atomic::Ordering::SeqCst) == false {
+            use std::fs::File;
+            use std::io::Write;
+
+            let all_key_values = {
+                let mut res = vec![];
+                let mut prefix = vec![];
+                while let Some(key) = sp_io::storage::next_key(&prefix) {
+                    let value = frame_support::storage::unhashed::get_raw(&key).unwrap();
+                    let key = key.to_vec();
+                    prefix = key.clone();
+
+                    res.push((key, value));
+                }
+
+                res
+            };
+
+            let output_file_path = "fuzz_starlight_live_export_state_after_oninitialize.hexsnap.txt";
+            let mut output_file = File::create(output_file_path).inspect_err(|e| {
+                log::error!("Failed to create output file: {}", e);
+            }).unwrap();
+
+            for (key, value) in all_key_values {
+                writeln!(
+                    output_file,
+                    "\"0x{}\": \"0x{}\",",
+                    hex::encode(&key),
+                    hex::encode(&value)
+                ).expect("failed to writeln");
+            }
+            output_file.flush().unwrap();
+            log::info!("Exported hex snapshot to file {}", output_file_path);
+
+            EXPORTED_STORAGE.store(true, std::sync::atomic::Ordering::SeqCst);
+            return;
+        }
+         */
+
+        // The snapshot is saved after the initial on_initialize
+        //initialize_block(block);
 
         // Uncomment to enable exporting storage to hex snapshot file
         // Useful to avoid running runtime upgrade every time, just export the state after the runtime upgrade
@@ -830,6 +870,11 @@ fn fuzz_main(data: &[u8]) {
 
         for (lapse, origin, extrinsic) in extrinsics {
             for _ in 0..lapse {
+                // For testing, only create 1 block, do not even finalize it
+                // TODO: this seems to work very well, improve snapshot by storing it after a call to on_initialize
+                // this way we don't need to call that for every input. But save as separate fuzz target.
+                break;
+
                 finalize_block(elapsed);
 
                 block += 1;
@@ -889,9 +934,11 @@ fn fuzz_main(data: &[u8]) {
             }
         }
 
+        // For testing, disable this to check performance
+        /*
         finalize_block(elapsed);
-
         check_invariants(block, initial_total_issuance, block_rewards.get());
+         */
     });
 }
 
