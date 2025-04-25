@@ -56,6 +56,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "fuzz_starlight_live_oneblock_events"
+path = "fuzz_targets/fuzz_starlight_live_oneblock_events.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "fuzz_starlight_deposits"
 path = "fuzz_targets/fuzz_starlight_deposits.rs"
 test = false
