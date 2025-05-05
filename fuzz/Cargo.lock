@@ -1861,6 +1861,7 @@ dependencies = [
  "pallet-external-validators-rewards-runtime-api",
  "pallet-grandpa",
  "pallet-identity",
+ "pallet-inactivity-tracking",
  "pallet-inflation-rewards",
  "pallet-initializer",
  "pallet-invulnerables",
@@ -6504,6 +6505,23 @@ dependencies = [
  "scale-info",
  "sp-io",
  "sp-runtime",
+]
+
+[[package]]
+name = "pallet-inactivity-tracking"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-core",
+ "sp-runtime",
+ "sp-staking",
+ "sp-std",
+ "tp-traits",
 ]
 
 [[package]]

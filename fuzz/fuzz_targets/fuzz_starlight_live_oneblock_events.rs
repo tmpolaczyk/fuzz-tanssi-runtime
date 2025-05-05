@@ -6,8 +6,10 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
+use std::cmp::min;
 use std::collections::HashSet;
 use std::fs::OpenOptions;
+use std::io::Write;
 use frame_support::dispatch::{CallableCallFor as CallableCallForG, DispatchClass, DispatchResultWithPostInfo};
 use dancelight_runtime::{AuthorNoting, ExternalValidators, OriginCaller};
 use dancelight_runtime::CollatorsInflationRatePerBlock;
@@ -27,6 +29,7 @@ use sp_state_machine::Ext;
 use frame_support::storage::unhashed;
 use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
+use parity_scale_codec::Output;
 use sp_runtime::{DispatchError, DispatchErrorWithPostInfo};
 use {
     cumulus_primitives_core::ParaId,
@@ -1148,6 +1151,38 @@ fn fuzz_init() {
 }
 
 libfuzzer_sys::fuzz_target!(init: fuzz_init(), |data: &[u8]| fuzz_main(data));
+
+fn extrinsics_iter(mut extrinsic_data: &[u8]) -> impl Iterator<Item = ExtrOrPseudo> + use<'_> {
+    iter::from_fn(move || DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
+}
+
+struct CursorOutputIgnoreErrors<W>(std::io::Cursor<W>);
+impl<W: std::io::Write> parity_scale_codec::Output for CursorOutputIgnoreErrors<W>
+where std::io::Cursor<W>: std::io::Write,
+{
+    fn write(&mut self, bytes: &[u8]) {
+        // Ignore errors
+        let _ = self.0.write_all(bytes);
+    }
+}
+
+fn fuzz_crossover_extr_or_pseudo(data1: &[u8], data2: &[u8], out: &mut [u8], _seed: u32) -> usize {
+    // Decode from 1
+    let extr1 = extrinsics_iter(data1);
+    // Decode from 2
+    let extr2 = extrinsics_iter(data2);
+    // Encode each item, first all from 1 then all from 2
+    let mut out_writer = CursorOutputIgnoreErrors(std::io::Cursor::new(out));
+    for extr in extr1.chain(extr2) {
+        extr.encode_to(&mut out_writer);
+        if out_writer.0.position() as usize == out_writer.0.get_ref().len() {
+            break;
+        }
+    }
+
+    out_writer.0.position() as usize
+}
+libfuzzer_sys::fuzz_crossover!(|data1: &[u8], data2: &[u8], out: &mut [u8], seed: u32| { fuzz_crossover_extr_or_pseudo(data1, data2, out, seed) });
 
 /*
 libfuzzer_sys::fuzz_mutator!(

@@ -69,6 +69,13 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "fuzz_starlight_decode_calls"
+path = "fuzz_targets/fuzz_starlight_decode_calls.rs"
+test = false
+doc = false
+bench = false
+
 [dependencies]
 #dancebox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/dancebox", default-features = false, features = [ "std", "try-runtime", "fast-runtime" ] }
 #flashbox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/flashbox", default-features = false, features = [ "std", "try-runtime", "fast-runtime" ] }
