@@ -6,6 +6,7 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
+use std::io::Write;
 use frame_support::dispatch::CallableCallFor as CallableCallForG;
 use dancelight_runtime::{ExternalValidators, OriginCaller};
 use dancelight_runtime::CollatorsInflationRatePerBlock;
@@ -24,6 +25,10 @@ use sp_state_machine::TrieBackendBuilder;
 use sp_state_machine::Ext;
 use frame_support::storage::unhashed;
 use std::sync::atomic::AtomicBool;
+use rand::{Rng, SeedableRng};
+use rand::seq::IndexedRandom;
+use scale_info::PortableRegistry;
+use scale_value::{Composite, ValueDef};
 use sp_runtime::DispatchError;
 use {
     cumulus_primitives_core::ParaId,
@@ -61,6 +66,7 @@ use {
         traits::{Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
         Digest, DigestItem, Perbill, Saturating, Storage,
     },
+    scale_info::TypeInfo,
     sp_state_machine::BasicExternalities,
     std::{
         any::TypeId,
@@ -608,6 +614,11 @@ lazy_static::lazy_static! {
             _ => panic!("metadata has been bumped, test needs to be updated"),
         };
 
+        for x in &metadata.types.types {
+            let path = x.ty.path.to_string();
+            log::info!("id: {} type: {}", x.id, path);
+        }
+
         metadata
     };
 
@@ -624,9 +635,32 @@ lazy_static::lazy_static! {
 
         v
     };
+
+    static ref RUNTIME_CALL_TYPE_ID: u32 = {
+        find_type_id(&METADATA.types, "RuntimeCall")
+    };
+
+    static ref ACCOUNT_ID_TYPE_ID: u32 = {
+        find_type_id(&METADATA.types, "AccountId")
+    };
 }
 
-#[derive(Debug, Encode, Decode)]
+fn find_type_id(registry: &PortableRegistry, path_contains: &str) -> u32 {
+    let type_id = registry.types.iter().filter_map(|x| {
+        let path = x.ty.path.to_string();
+        if path.contains(path_contains) {
+            Some(x.id)
+        } else {
+            None
+        }
+    });
+    let found: Vec<u32> = type_id.collect();
+    assert_eq!(found.len(), 1, "Couldn't find type id or found more than 1 type");
+
+    found.into_iter().next().unwrap()
+}
+
+#[derive(Debug, Encode, Decode, TypeInfo)]
 enum FuzzRuntimeCall {
     SetOrigin {
         // Default: 0 (signed origin)
@@ -644,7 +678,7 @@ enum FuzzRuntimeCall {
     RecvEthMsg(Vec<u8>),
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Encode, Decode, TypeInfo)]
 enum ExtrOrPseudo {
     Extr(RuntimeCall),
     Pseudo(FuzzRuntimeCall),
@@ -660,13 +694,112 @@ fn init_logger() {
     logger.init().unwrap();
 }
 
+#[derive(Default)]
+struct SeenValues {
+    account_id: Vec<scale_value::Value<u32>>
+}
+
+fn test_mutate_value<R: Rng + ?Sized>(val: &mut scale_value::Value<u32>, seen_values: &mut SeenValues, rng: &mut R) {
+    if val.context == *ACCOUNT_ID_TYPE_ID {
+
+        seen_values.account_id.push(val.clone());
+
+        let new_val = {
+            let new = seen_values.account_id.choose(rng);
+            // We pushed current value to account_id, so it cannot be empty
+            new.unwrap()
+        };
+
+        // Mutate AccountId
+        log::info!("Found AccountId");
+        log::info!("DEBUG VAL: {:?}", val);
+
+        *val = new_val.clone();
+    }
+
+    match &mut val.value {
+        ValueDef::Composite(x) => {
+            match x {
+                Composite::Named(vs) => {
+                    for (k, v) in vs {
+                        test_mutate_value(v, seen_values, rng);
+                    }
+                }
+                Composite::Unnamed(vs) => {
+                    for v in vs {
+                        test_mutate_value(v, seen_values, rng);
+                    }
+                }
+            }
+        }
+        ValueDef::Variant(x) => {
+            match &mut x.values {
+                Composite::Named(vs) => {
+                    for (k, v) in vs {
+                        test_mutate_value(v, seen_values, rng);
+                    }
+                }
+                Composite::Unnamed(vs) => {
+                    for v in vs {
+                        test_mutate_value(v, seen_values, rng);
+                    }
+                }
+            }
+        }
+        ValueDef::BitSequence(_) => {}
+        ValueDef::Primitive(_) => {}
+    }
+}
+
+fn test_mutate<R: Rng + ?Sized>(extr: &mut [ExtrOrPseudo], seen_values: &mut SeenValues, rng: &mut R) {
+    for extr_or_ps in extr {
+        let extr = match extr_or_ps {
+            ExtrOrPseudo::Extr(extr) => extr,
+            ExtrOrPseudo::Pseudo(_) => continue,
+        };
+
+        //log::info!("asda EXTR: {:?}", extr);
+
+        let mut bytes = extr.encode();
+        let metadata = &*METADATA;
+        let registry = &metadata.types;
+        let type_id = *RUNTIME_CALL_TYPE_ID;
+        //let (type_id, registry) = make_type::<Vec<ExtrOrPseudo>>();
+        let mut new_value = match scale_value::scale::decode_as_type(&mut &*bytes, type_id, registry) {
+            Ok(x) => x,
+            Err(e) => {
+                //log::error!("{}", e);
+                continue;
+            }
+        };
+
+        //let sss = serde_json::to_string(&new_value).unwrap();
+        //log::info!("JSON EXTR: {:?}", sss);
+
+        test_mutate_value(&mut new_value, seen_values, rng);
+
+        // Now encode back
+        let mut buf = vec![];
+        // This could panic if there is a bug in scale_value crate, in that case just ignore error
+        // and continue
+        scale_value::scale::encode_as_type(&new_value, type_id, registry, &mut buf).unwrap();
+
+        let new_runtime_call: RuntimeCall = RuntimeCall::decode(&mut &buf[..]).unwrap();
+
+        *extr = new_runtime_call;
+    }
+}
+
 static EXPORTED_STORAGE: AtomicBool = AtomicBool::new(false);
+static FUZZ_MAIN_CALLED: AtomicBool = AtomicBool::new(false);
+static FUZZ_INIT_CALLED: AtomicBool = AtomicBool::new(false);
 
 fn fuzz_main(data: &[u8]) {
+    FUZZ_MAIN_CALLED.store(true, std::sync::atomic::Ordering::SeqCst);
     //println!("data: {:?}", data);
     let mut extrinsic_data = data;
     //#[allow(deprecated)]
-    let extrinsics: Vec<ExtrOrPseudo> =
+    let mut extrinsics: Vec<ExtrOrPseudo> =
         iter::from_fn(|| DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
         .filter(|x| match x {
             ExtrOrPseudo::Extr(x) => !recursively_find_call(x.clone(), |call| {
@@ -878,6 +1011,9 @@ fn fuzz_main(data: &[u8]) {
         let mut origin_retry_as_root = true;
         let mut origin_try_root_first = false;
 
+        //let mut seen_values = SeenValues::default();
+        //test_mutate(&mut extrinsics, &mut seen_values);
+
         for extrinsic in extrinsics {
             // For testing, only create 1 block, do not even finalize it
 
@@ -1037,25 +1173,124 @@ fn fuzz_main(data: &[u8]) {
 }
 
 fn fuzz_init() {
+    FUZZ_INIT_CALLED.store(true, std::sync::atomic::Ordering::SeqCst);
+
     // Uncomment to init logger
     init_logger();
 
     // Initialize genesis storage
     &*GENESIS_STORAGE;
+
+    // Initialize stuff related to metadata (needs externalities)
+    use sp_runtime::traits::BlakeTwo256;
+
+    use sp_state_machine::OverlayedChanges;
+    use sp_state_machine::TrieBackendBuilder;
+    use sp_state_machine::Ext;
+    let mut overlay = OverlayedChanges::default();
+    let (storage, root, _shared_cache) = &*GENESIS_STORAGE;
+    let root = *root;
+    let backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new(storage, root).build();
+    let extensions = None;
+    let mut ext = Ext::new(&mut overlay, &backend, extensions);
+    sp_externalities::set_and_run_with_externalities(&mut ext, || {
+        &*METADATA;
+    });
 }
 
 libfuzzer_sys::fuzz_target!(init: fuzz_init(), |data: &[u8]| fuzz_main(data));
 
-/*
-libfuzzer_sys::fuzz_mutator!(
-    |data: &mut [u8], size: usize, max_size: usize, _seed: u32| {
-        let mut data = data;
-        let cap = data.len();
-        let new_size = libfuzzer_sys::fuzzer_mutate(&mut data, size, cap);
-        mutate_interesting_accounts(&mut data[..new_size]);
-        mutate_interesting_para_ids(&mut data[..new_size]);
+fn extrinsics_iter(mut extrinsic_data: &[u8]) -> impl Iterator<Item = ExtrOrPseudo> + use<'_> {
+    iter::from_fn(move || DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
+}
 
-        new_size
+struct CursorOutputIgnoreErrors<W>(std::io::Cursor<W>);
+impl<W: std::io::Write> parity_scale_codec::Output for CursorOutputIgnoreErrors<W>
+where std::io::Cursor<W>: std::io::Write,
+{
+    fn write(&mut self, bytes: &[u8]) {
+        // Ignore errors
+        let _ = self.0.write_all(bytes);
+    }
+}
+
+fn fuzz_crossover_extr_or_pseudo(data1: &[u8], data2: &[u8], out: &mut [u8], seed: u32) -> usize {
+    // Decode from 1
+    let extr1 = extrinsics_iter(data1);
+    // Decode from 2
+    let extr2 = extrinsics_iter(data2);
+    // Encode each item, first all from 1 then all from 2
+    let mut out_writer = CursorOutputIgnoreErrors(std::io::Cursor::new(out));
+    let rng = &mut rand::rngs::SmallRng::seed_from_u64(u64::from(seed));
+    // 20% to keep all
+    let keep_all = rng.random_ratio(20, 100);
+
+    // Chain, first all from 1 then all from 2
+    for extr in extr1.chain(extr2) {
+        if !keep_all {
+            let keep_this_one = rng.random_ratio(50, 100);
+            if !keep_this_one {
+                continue;
+            }
+        }
+        extr.encode_to(&mut out_writer);
+        if out_writer.0.position() as usize == out_writer.0.get_ref().len() {
+            break;
+        }
+    }
+
+    // TODO: alternative way, one extrinsic of each and select which one to keep at random
+
+    out_writer.0.position() as usize
+}
+
+libfuzzer_sys::fuzz_crossover!(|data1: &[u8], data2: &[u8], out: &mut [u8], seed: u32| { fuzz_crossover_extr_or_pseudo(data1, data2, out, seed) });
+
+fn fuzz_mutator_extr_or_pseudo(data: &mut [u8], size: usize, max_size: usize, seed: u32) -> usize {
+    let mut data = data;
+    let cap = data.len();
+    let rng = &mut rand::rngs::SmallRng::seed_from_u64(u64::from(seed));
+    let mutate_bytes = rng.random_ratio(80, 100);
+    let new_size = if mutate_bytes {
+        libfuzzer_sys::fuzzer_mutate(&mut data, size, cap)
+    } else {
+        size
+    };
+    let fuzz_init_called_before_this = FUZZ_INIT_CALLED.load(std::sync::atomic::Ordering::SeqCst);
+    let fuzz_main_called_before_this = FUZZ_MAIN_CALLED.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(fuzz_init_called_before_this && fuzz_main_called_before_this, "{:?}", (fuzz_init_called_before_this, fuzz_main_called_before_this));
+    //mutate_interesting_accounts(&mut data[..new_size]);
+    //mutate_interesting_para_ids(&mut data[..new_size]);
+
+    // Decode from 1
+    let extr1 = extrinsics_iter(&data[..new_size]);
+    let mut out = vec![0u8; max_size];
+    let mut out_writer = CursorOutputIgnoreErrors(std::io::Cursor::new(out));
+    let mut seen_values = SeenValues::default();
+
+    for extr in extr1 {
+        // 20% to skip each extrinsic
+        let skip_this = rng.random_ratio(20, 100);
+        if skip_this {
+            continue;
+        }
+
+        let mut extr_v = [extr];
+        test_mutate(&mut extr_v, &mut seen_values, rng);
+        extr_v[0].encode_to(&mut out_writer);
+        if out_writer.0.position() as usize == out_writer.0.get_ref().len() {
+            break;
+        }
+    }
+
+    data.copy_from_slice(&out_writer.0.get_ref());
+
+    out_writer.0.position() as usize
+
+}
+
+libfuzzer_sys::fuzz_mutator!(
+    |data: &mut [u8], size: usize, max_size: usize, seed: u32| {
+        fuzz_mutator_extr_or_pseudo(data, size, max_size, seed)
     }
 );
-*/
