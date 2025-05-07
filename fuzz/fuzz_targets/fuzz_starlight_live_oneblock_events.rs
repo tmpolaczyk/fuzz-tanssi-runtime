@@ -11,12 +11,12 @@ use std::collections::HashSet;
 use std::fs::OpenOptions;
 use std::io::Write;
 use frame_support::dispatch::{CallableCallFor as CallableCallForG, DispatchClass, DispatchResultWithPostInfo};
-use dancelight_runtime::{AuthorNoting, ExternalValidators, OriginCaller};
-use dancelight_runtime::CollatorsInflationRatePerBlock;
-use dancelight_runtime::ValidatorsInflationRatePerEra;
-use dancelight_runtime::ContainerRegistrar;
+use starlight_runtime::{AuthorNoting, ExternalValidators, OriginCaller};
+use starlight_runtime::CollatorsInflationRatePerBlock;
+use starlight_runtime::ValidatorsInflationRatePerEra;
+use starlight_runtime::ContainerRegistrar;
 use frame_support::traits::Currency;
-use dancelight_runtime::InflationRewards;
+use starlight_runtime::InflationRewards;
 use sp_trie::GenericMemoryDB;
 use sp_trie::cache::{CacheSize, SharedTrieCache};
 use sp_state_machine::MemoryDB;
@@ -33,12 +33,12 @@ use parity_scale_codec::Output;
 use sp_runtime::{DispatchError, DispatchErrorWithPostInfo};
 use {
     cumulus_primitives_core::ParaId,
-    dancelight_runtime::{
+    starlight_runtime::{
         genesis_config_presets::get_authority_keys_from_seed, AccountId, AllPalletsWithSystem,
         Balance, Balances, Executive, Header, ParaInherent, Runtime, RuntimeCall, RuntimeOrigin,
         Timestamp, UncheckedExtrinsic,
     },
-    dancelight_runtime_constants::time::SLOT_DURATION,
+    starlight_runtime_constants::time::SLOT_DURATION,
     dp_container_chain_genesis_data::ContainerChainGenesisData,
     dp_core::well_known_keys::PARAS_HEADS_INDEX,
     frame_metadata::{v15::RuntimeMetadataV15, RuntimeMetadata, RuntimeMetadataPrefixed},
@@ -146,28 +146,28 @@ fn root_can_call(call: &RuntimeCall) -> bool {
             false
         }
         RuntimeCall::ExternalValidators(x) => match x {
-            CallableCallFor::<dancelight_runtime::ExternalValidators>::set_external_validators { .. } => true,
-            CallableCallFor::<dancelight_runtime::ExternalValidators>::skip_external_validators { .. } => true,
-            CallableCallFor::<dancelight_runtime::ExternalValidators>::add_whitelisted { .. } => true,
+            CallableCallFor::<starlight_runtime::ExternalValidators>::set_external_validators { .. } => true,
+            CallableCallFor::<starlight_runtime::ExternalValidators>::skip_external_validators { .. } => true,
+            CallableCallFor::<starlight_runtime::ExternalValidators>::add_whitelisted { .. } => true,
             // TODO: check that we don't remove all?
-            CallableCallFor::<dancelight_runtime::ExternalValidators>::remove_whitelisted { .. } => true,
+            CallableCallFor::<starlight_runtime::ExternalValidators>::remove_whitelisted { .. } => true,
             // force_era will not be properly tested because this test only runs for one block
-            CallableCallFor::<dancelight_runtime::ExternalValidators>::force_era { .. } => true,
+            CallableCallFor::<starlight_runtime::ExternalValidators>::force_era { .. } => true,
             _ => true,
         }
         RuntimeCall::ExternalValidatorSlashes(x) => match x {
             // Enable all to see what happens
-            CallableCallFor::<dancelight_runtime::ExternalValidatorSlashes>::cancel_deferred_slash { .. } => true,
+            CallableCallFor::<starlight_runtime::ExternalValidatorSlashes>::cancel_deferred_slash { .. } => true,
             _ => true,
         }
         RuntimeCall::Utility(x) => match x {
-            CallableCallFor::<dancelight_runtime::Utility>::as_derivative { .. } => false,
-            CallableCallFor::<dancelight_runtime::Utility>::dispatch_as { .. } => false,
-            CallableCallFor::<dancelight_runtime::Utility>::with_weight { .. } => false,
+            CallableCallFor::<starlight_runtime::Utility>::as_derivative { .. } => false,
+            CallableCallFor::<starlight_runtime::Utility>::dispatch_as { .. } => false,
+            CallableCallFor::<starlight_runtime::Utility>::with_weight { .. } => false,
             // Allow root to batch all, but only if root_can_call all calls in batch
-            CallableCallFor::<dancelight_runtime::Utility>::batch { calls } => calls.iter().all(root_can_call),
-            CallableCallFor::<dancelight_runtime::Utility>::batch_all { calls } => calls.iter().all(root_can_call),
-            CallableCallFor::<dancelight_runtime::Utility>::force_batch { calls } => calls.iter().all(root_can_call),
+            CallableCallFor::<starlight_runtime::Utility>::batch { calls } => calls.iter().all(root_can_call),
+            CallableCallFor::<starlight_runtime::Utility>::batch_all { calls } => calls.iter().all(root_can_call),
+            CallableCallFor::<starlight_runtime::Utility>::force_batch { calls } => calls.iter().all(root_can_call),
             _ => false,
         }
         _ => false,
@@ -254,10 +254,10 @@ where
 /// Generate the session keys from individual elements.
 ///
 /// The input must be a tuple of individual keys (a single arg for now since we have just one key).
-pub fn template_session_keys(account: AccountId) -> dancelight_runtime::SessionKeys {
+pub fn template_session_keys(account: AccountId) -> starlight_runtime::SessionKeys {
     let authority_keys = get_authority_keys_from_seed(&account.to_string());
 
-    dancelight_runtime::SessionKeys {
+    starlight_runtime::SessionKeys {
         babe: authority_keys.babe.clone(),
         grandpa: authority_keys.grandpa.clone(),
         para_validator: authority_keys.para_validator.clone(),
@@ -506,9 +506,9 @@ lazy_static::lazy_static! {
     };
     static ref INTERESTING_ACCOUNTS: Vec<AccountId> = {
         let accounts_with_ed = vec![
-            //dancelight_runtime::StakingAccount::get(),
-            //dancelight_runtime::ParachainBondAccount::get(),
-            //dancelight_runtime::PendingRewardsAccount::get(),
+            //starlight_runtime::StakingAccount::get(),
+            //starlight_runtime::ParachainBondAccount::get(),
+            //starlight_runtime::PendingRewardsAccount::get(),
         ];
 
         VALID_ORIGINS.iter().cloned().chain(
@@ -568,9 +568,9 @@ lazy_static::lazy_static! {
         let invulnerables = invulnerables_from_seeds(invulnerables.iter());
         endowed_accounts.extend(invulnerables.iter().map(|x| x.0.clone()));
         let accounts_with_ed = vec![
-            //dancelight_runtime::StakingAccount::get(),
-            //dancelight_runtime::ParachainBondAccount::get(),
-            //dancelight_runtime::PendingRewardsAccount::get(),
+            //starlight_runtime::StakingAccount::get(),
+            //starlight_runtime::ParachainBondAccount::get(),
+            //starlight_runtime::PendingRewardsAccount::get(),
         ];
 
         let genesis_balances = endowed_accounts
@@ -581,7 +581,7 @@ lazy_static::lazy_static! {
                 accounts_with_ed
                     .iter()
                     .cloned()
-                    .map(|k| (k, dancelight_runtime_constants::currency::EXISTENTIAL_DEPOSIT))
+                    .map(|k| (k, starlight_runtime_constants::currency::EXISTENTIAL_DEPOSIT))
             );
 
         // Create empty MemoryDB
@@ -604,7 +604,7 @@ lazy_static::lazy_static! {
 
             // Need to manually update balances because using genesis builder overwrites total issuance
             for (account, new_balance) in genesis_balances {
-                dancelight_runtime::Balances::force_set_balance(RuntimeOrigin::root(), account.into(), new_balance).unwrap();
+                starlight_runtime::Balances::force_set_balance(RuntimeOrigin::root(), account.into(), new_balance).unwrap();
             }
         });
 
@@ -733,7 +733,7 @@ fn fuzz_main(data: &[u8]) {
     let initialize_block = |block: u32| {
         log::debug!(target: "fuzz::initialize", "\ninitializing block {block}");
 
-        let validators = dancelight_runtime::Session::validators();
+        let validators = starlight_runtime::Session::validators();
         let slot = Slot::from(u64::from(block + 350000000));
         let authority_index = u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
         let pre_digest = Digest {
@@ -832,7 +832,7 @@ fn fuzz_main(data: &[u8]) {
         // Use lazy_static to cache values that don't depend on fuzzer input
         lazy_static::lazy_static! {
             static ref INITIAL_TOTAL_ISSUANCE: Balance = TotalIssuance::<Runtime>::get();
-            static ref NUM_EVENTS_BEFORE: usize = dancelight_runtime::System::events().len();
+            static ref NUM_EVENTS_BEFORE: usize = starlight_runtime::System::events().len();
         }
         let initial_total_issuance = *INITIAL_TOTAL_ISSUANCE;
         let num_events_before = *NUM_EVENTS_BEFORE;
@@ -928,7 +928,7 @@ fn fuzz_main(data: &[u8]) {
                         match &extrinsic {
                             // Whitelist some extrinsics with big weights
                             RuntimeCall::Configuration(runtime_parachains::configuration::Call::set_hrmp_open_request_ttl { .. }) => false,
-                            RuntimeCall::Hrmp(CallableCallFor::<dancelight_runtime::Hrmp>::force_process_hrmp_close { .. }) => false,
+                            RuntimeCall::Hrmp(CallableCallFor::<starlight_runtime::Hrmp>::force_process_hrmp_close { .. }) => false,
                             // I guess everything under HRMP is disabled
                             RuntimeCall::Hrmp(..) => false,
                             _ => true,
@@ -1100,7 +1100,7 @@ fn fuzz_main(data: &[u8]) {
         finalize_block(elapsed);
         check_invariants(block, initial_total_issuance, block_rewards.get());
          */
-        let events_all = dancelight_runtime::System::events();
+        let events_all = starlight_runtime::System::events();
         let (_, events) = events_all.split_at(num_events_before);
         use std::hash::{BuildHasherDefault, DefaultHasher};
         static SEEN_EVENTS: Mutex<HashSet<(u8, u8), BuildHasherDefault<DefaultHasher>>> = Mutex::new(HashSet::with_hasher(BuildHasherDefault::new()));
