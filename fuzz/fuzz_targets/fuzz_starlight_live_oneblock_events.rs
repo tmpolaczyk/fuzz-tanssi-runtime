@@ -6,11 +6,15 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
+use libfuzzer_sys::arbitrary::Arbitrary;
+use libfuzzer_sys::arbitrary;
+use itertools::{EitherOrBoth, Itertools};
+use serde::{Serialize, Deserialize};
 use std::cmp::min;
-use std::fs::OpenOptions;
-use std::io::Write;
+use std::fs::{File, OpenOptions};
+use std::io::{BufWriter, Write};
 use frame_support::dispatch::{CallableCallFor as CallableCallForG, DispatchClass, DispatchResultWithPostInfo};
-use starlight_runtime::{AuthorNoting, ExternalValidators, OriginCaller};
+use starlight_runtime::{AuthorNoting, ExternalValidators, OriginCaller, RuntimeEvent};
 use starlight_runtime::CollatorsInflationRatePerBlock;
 use starlight_runtime::ValidatorsInflationRatePerEra;
 use starlight_runtime::ContainerRegistrar;
@@ -28,6 +32,7 @@ use sp_state_machine::Ext;
 use frame_support::storage::unhashed;
 use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
+use libfuzzer_sys::arbitrary::{Unstructured};
 use parity_scale_codec::Output;
 use rand::prelude::IndexedRandom;
 use rand::{Rng, SeedableRng};
@@ -651,10 +656,22 @@ lazy_static::lazy_static! {
     static ref RUNTIME_CALL_TYPE_ID: u32 = {
         find_type_id(&METADATA.types, "RuntimeCall")
     };
-
+    static ref RUNTIME_EVENT_TYPE_ID: u32 = {
+        find_type_id(&METADATA.types, "RuntimeEvent")
+    };
     static ref ACCOUNT_ID_TYPE_ID: u32 = {
         find_type_id(&METADATA.types, "AccountId")
     };
+
+    static ref SEEN_VALUES_FROM_EVENTS: Mutex<SeenValues2> = Mutex::new(SeenValues2::default());
+}
+
+
+fn list_type_ids(registry: &PortableRegistry) {
+    for x in registry.types.iter() {
+        let path = x.ty.path.to_string();
+        log::info!("{}: {:?}", x.id, path);
+    }
 }
 
 fn find_type_id(registry: &PortableRegistry, path_contains: &str) -> u32 {
@@ -672,7 +689,7 @@ fn find_type_id(registry: &PortableRegistry, path_contains: &str) -> u32 {
     found.into_iter().next().unwrap()
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Encode, Decode, Clone)]
 enum FuzzRuntimeCall {
     SetOrigin {
         // Default: 0 (signed origin)
@@ -690,7 +707,7 @@ enum FuzzRuntimeCall {
     RecvEthMsg(Vec<u8>),
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Encode, Decode, Clone)]
 enum ExtrOrPseudo {
     Extr(RuntimeCall),
     Pseudo(FuzzRuntimeCall),
@@ -710,6 +727,18 @@ fn init_logger() {
 struct SeenValues {
     account_id: Vec<scale_value::Value<u32>>,
 }
+
+#[derive(Default, Serialize, Deserialize)]
+struct SeenValues2 {
+    account_id: BTreeSet<AccountId>,
+}
+
+impl SeenValues2 {
+    fn len(&self) -> usize {
+        self.account_id.len()
+    }
+}
+
 
 fn test_mutate_value<R: Rng + ?Sized>(val: &mut scale_value::Value<u32>, seen_values: &mut SeenValues, rng: &mut R) {
     if val.context == *ACCOUNT_ID_TYPE_ID {
@@ -799,6 +828,77 @@ fn test_mutate<R: Rng + ?Sized>(extr: &mut [ExtrOrPseudo], seen_values: &mut See
         let new_runtime_call: RuntimeCall = RuntimeCall::decode(&mut &buf[..]).unwrap();
 
         *extr = new_runtime_call;
+    }
+}
+
+fn visit_value(val: &scale_value::Value<u32>, seen_values: &mut SeenValues2) {
+    if val.context == *ACCOUNT_ID_TYPE_ID {
+        let metadata = &*METADATA;
+        let registry = &metadata.types;
+        let mut buf = vec![];
+        scale_value::scale::encode_as_type(&val, val.context, registry, &mut buf).unwrap();
+
+        let account_id: AccountId = AccountId::decode(&mut buf.as_slice()).unwrap();
+
+        let log_str = format!("SEEN AccountId in EVENTS: {:?}", account_id);
+
+        if seen_values.account_id.insert(account_id) {
+            log::warn!("{}", log_str);
+        }
+    }
+
+    match &val.value {
+        ValueDef::Composite(x) => {
+            match x {
+                Composite::Named(vs) => {
+                    for (k, v) in vs {
+                        visit_value(v, seen_values);
+                    }
+                }
+                Composite::Unnamed(vs) => {
+                    for v in vs {
+                        visit_value(v, seen_values);
+                    }
+                }
+            }
+        }
+        ValueDef::Variant(x) => {
+            match &x.values {
+                Composite::Named(vs) => {
+                    for (k, v) in vs {
+                        visit_value(v, seen_values);
+                    }
+                }
+                Composite::Unnamed(vs) => {
+                    for v in vs {
+                        visit_value(v, seen_values);
+                    }
+                }
+            }
+        }
+        ValueDef::BitSequence(_) => {}
+        ValueDef::Primitive(_) => {}
+    }
+}
+
+fn visit_events(events: &[&RuntimeEvent], seen_values: &mut SeenValues2) {
+    for event in events {
+        let mut bytes = event.encode();
+        let metadata = &*METADATA;
+        let registry = &metadata.types;
+        let type_id = *RUNTIME_EVENT_TYPE_ID;
+        let new_value = match scale_value::scale::decode_as_type(&mut &*bytes, type_id, registry) {
+            Ok(x) => x,
+            Err(e) => {
+                //log::error!("{}", e);
+                continue;
+            }
+        };
+
+        //let sss = serde_json::to_string(&new_value).unwrap();
+        //log::info!("JSON EXTR: {:?}", sss);
+
+        visit_value(&new_value, seen_values);
     }
 }
 
@@ -1232,6 +1332,17 @@ fn fuzz_main(data: &[u8]) {
         let mut events: Vec<_> = events.iter().map(|ev| {
             &ev.event
         }).collect();
+        let mut seen_events2 = SEEN_VALUES_FROM_EVENTS.lock().unwrap();
+        let len_before = seen_events2.len();
+        visit_events(&events, &mut *seen_events2);
+        let len_after = seen_events2.len();
+        if len_after > len_before {
+            let file = File::create("/tmp/seen_account_ids.json").unwrap();
+            let writer = BufWriter::new(file);
+            serde_json::to_writer_pretty(writer, &*seen_events2).unwrap();
+        }
+        drop(seen_events2);
+
         let mut seen_events = SEEN_EVENTS.lock().unwrap();
         events.retain(|x| {
             let x_enc = x.encode();
@@ -1289,9 +1400,29 @@ fn fuzz_init() {
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         &*METADATA;
     });
+
+    list_type_ids(&METADATA.types);
 }
 
 libfuzzer_sys::fuzz_target!(init: fuzz_init(), |data: &[u8]| fuzz_main(data));
+
+fn extrinsics_iter_ignore_errors(mut extrinsic_data: &[u8]) -> impl Iterator<Item = RuntimeCall> + use<'_> {
+    iter::from_fn(move || {
+        loop {
+            match DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data) {
+                Ok(x) => return Some(x),
+                Err(_e) => {
+                    if extrinsic_data.is_empty() {
+                        return None
+                    } else {
+                        extrinsic_data = &extrinsic_data[1..];
+                        continue;
+                    }
+                }
+            }
+        }
+    })
+}
 
 fn extrinsics_iter(mut extrinsic_data: &[u8]) -> impl Iterator<Item = ExtrOrPseudo> + use<'_> {
     iter::from_fn(move || DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
@@ -1317,22 +1448,48 @@ fn fuzz_crossover_extr_or_pseudo(data1: &[u8], data2: &[u8], out: &mut [u8], see
     let rng = &mut rand::rngs::SmallRng::seed_from_u64(u64::from(seed));
     // 20% to keep all
     let keep_all = rng.random_ratio(20, 100);
+    let mode = rng.random_range(0u8..=1);
 
-    // Chain, first all from 1 then all from 2
-    for extr in extr1.chain(extr2) {
-        if !keep_all {
-            let keep_this_one = rng.random_ratio(50, 100);
-            if !keep_this_one {
-                continue;
+    match mode {
+        0 => {
+            // Chain, first all from 1 then all from 2
+            for extr in extr1.chain(extr2) {
+                if !keep_all {
+                    let keep_this_one = rng.random_ratio(50, 100);
+                    if !keep_this_one {
+                        continue;
+                    }
+                }
+                extr.encode_to(&mut out_writer);
+                if out_writer.0.position() as usize == out_writer.0.get_ref().len() {
+                    break;
+                }
             }
         }
-        extr.encode_to(&mut out_writer);
-        if out_writer.0.position() as usize == out_writer.0.get_ref().len() {
-            break;
+        1 => {
+            // Intersperse one from 1 then one from 2
+            'outer: for pair in extr1.zip_longest(extr2) {
+                let extrs: Vec<_> = match pair {
+                    EitherOrBoth::Both(x, y) => vec![x, y],
+                    EitherOrBoth::Left(x)    => vec![x],
+                    EitherOrBoth::Right(y)   => vec![y],
+                };
+                for extr in extrs {
+                    if !keep_all {
+                        let keep_this_one = rng.random_ratio(50, 100);
+                        if !keep_this_one {
+                            continue;
+                        }
+                    }
+                    extr.encode_to(&mut out_writer);
+                    if out_writer.0.position() as usize == out_writer.0.get_ref().len() {
+                        break 'outer;
+                    }
+                }
+            }
         }
+        _ => unreachable!()
     }
-
-    // TODO: alternative way, one extrinsic of each and select which one to keep at random
 
     out_writer.0.position() as usize
 }
@@ -1350,31 +1507,129 @@ fn fuzz_mutator_extr_or_pseudo(data: &mut [u8], size: usize, max_size: usize, se
         size
     };
 
-    // Decode from 1
-    let extr1 = extrinsics_iter(&data[..new_size]);
-    let mut out = vec![0u8; max_size];
-    let mut out_writer = CursorOutputIgnoreErrors(std::io::Cursor::new(out));
-    let mut seen_values = SeenValues::default();
-
-    for extr in extr1 {
-        // 20% to skip each extrinsic
-        let skip_this = rng.random_ratio(20, 100);
-        if skip_this {
-            continue;
-        }
-
-        let mut extr_v = [extr];
-        test_mutate(&mut extr_v, &mut seen_values, rng);
-        extr_v[0].encode_to(&mut out_writer);
-        if out_writer.0.position() as usize == out_writer.0.get_ref().len() {
-            break;
-        }
+    // 10% to skip further mutations
+    if rng.random_ratio(10, 100) {
+        return new_size;
     }
 
-    data.copy_from_slice(&out_writer.0.get_ref());
+    // 90% to use fast mode that processes extrinsics on the fly, without collect
+    let fast_mode = rng.random_ratio(90, 100);
+    if fast_mode {
+        // Decode from 1
+        let extr1 = extrinsics_iter(&data[..new_size]);
+        let mut out = vec![0u8; max_size];
+        let mut out_writer = CursorOutputIgnoreErrors(std::io::Cursor::new(out));
+        let mut seen_values = SeenValues::default();
 
-    out_writer.0.position() as usize
+        for extr in extr1 {
+            // 20% to skip each extrinsic
+            let skip_this = rng.random_ratio(20, 100);
+            if skip_this {
+                continue;
+            }
 
+            let mut extr_v = [extr];
+            test_mutate(&mut extr_v, &mut seen_values, rng);
+            extr_v[0].encode_to(&mut out_writer);
+            if out_writer.0.position() as usize == out_writer.0.get_ref().len() {
+                break;
+            }
+        }
+
+        data.copy_from_slice(&out_writer.0.get_ref());
+
+        out_writer.0.position() as usize
+    } else {
+        // Slower mode
+        // Decode from 1
+        let mut extrs: Vec<_> = extrinsics_iter(&data[..new_size]).collect();
+        if extrs.is_empty() {
+            return 0;
+        }
+
+        #[derive(Arbitrary, Debug)]
+        enum Op {
+            Remove(u8),
+            Swap(u8, u8),
+            Dup(u8),
+        }
+
+        // No more ops than items
+        let max_size = 2 * extrs.len();
+        let arb_data_len = rng.random_range(0..=max_size);
+        let arb_data: Vec<u8> = (0..arb_data_len).map(|_| rng.random_range(0..extrs.len())).map(|x| x as u8).collect();
+        let mut arb_data = Unstructured::new(&arb_data);
+        let ops = <Vec<Op> as Arbitrary>::arbitrary(&mut arb_data).unwrap_or_default();
+
+        for op in ops {
+            match op {
+                Op::Remove(i) => {
+                    if (i as usize) < extrs.len() {
+                        extrs.remove(i as usize);
+                    }
+                }
+                Op::Swap(a, b) => {
+                    if (a as usize) < extrs.len() && (b as usize) < extrs.len() {
+                        extrs.swap(a as usize, b as usize);
+                    }
+                }
+                Op::Dup(i) => {
+                    if let Some(x) = extrs.get(i as usize) {
+                        extrs.insert(i as usize, x.clone());
+                    }
+                }
+            }
+        }
+
+        let mut out = vec![0u8; max_size];
+        let mut out_writer = CursorOutputIgnoreErrors(std::io::Cursor::new(out));
+        let mut seen_values = SeenValues::default();
+        // 5% to fill extrinsics with junk
+        // Probably not helpful for the fuzzer
+        let add_new_ones = rng.random_ratio(5, 100);
+
+        fn random_extrs<R: Rng + ?Sized>(rng: &mut R, attempts: usize) -> Vec<RuntimeCall> {
+            let mut v = vec![];
+
+            for _ in 0..attempts {
+                let max_size = 4096;
+                let rand_data_len = rng.random_range(0..=max_size);
+                let rand_data: Vec<u8> = (0..rand_data_len).map(|_| rng.random()).collect();
+
+                v.extend(extrinsics_iter_ignore_errors(&rand_data));
+            }
+
+            log::trace!("Generated {} new extrs purely from fresh random data", v.len());
+
+            v
+        }
+
+        if extrs.is_empty() || add_new_ones {
+            // Try to generate some new random extrinsics from scratch
+            //extrs.extend(random_extrs(rng, 10).into_iter().map(|x| ExtrOrPseudo::Extr(x)));
+        }
+
+        for extr in extrs {
+            // 20% to skip each extrinsic
+            let skip_this = rng.random_ratio(20, 100);
+            if skip_this {
+                continue;
+            }
+
+            let mut extr_v = [extr];
+            test_mutate(&mut extr_v, &mut seen_values, rng);
+            extr_v[0].encode_to(&mut out_writer);
+            if out_writer.0.position() as usize == out_writer.0.get_ref().len() {
+                break;
+            }
+        }
+
+        let new_len = out_writer.0.position() as usize;
+
+        data[..new_len].copy_from_slice(&out_writer.0.get_ref()[..new_len]);
+
+        new_len
+    }
 }
 
 libfuzzer_sys::fuzz_mutator!(

@@ -3295,6 +3295,7 @@ dependencies = [
  "hex",
  "include_dir",
  "indicatif",
+ "itertools 0.10.5",
  "lazy_static",
  "libfuzzer-sys",
  "log",

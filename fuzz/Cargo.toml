@@ -154,6 +154,7 @@ serde = { version = "1.0.197", default-features = false }
 serde_json = { version = "1", default-features = false }
 trie-db = { version = "0.29.1" }
 quinn-proto = { version = "0.9.6", features = [ "arbitrary" ] }
+itertools = "0.10.5"
 
 # quinn-proto uses cfg(fuzzing) to enable some additional code, but that code does not compile if we don't explicitly enable
 # the arbitrary feature. So add it as a dependency here, even though it is actually a dependency of some dependency
