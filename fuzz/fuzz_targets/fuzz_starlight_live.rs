@@ -6,29 +6,13 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
-use dancelight_runtime::ExternalValidators;
-use dancelight_runtime::CollatorsInflationRatePerBlock;
-use dancelight_runtime::ValidatorsInflationRatePerEra;
-use dancelight_runtime::ContainerRegistrar;
-use frame_support::traits::Currency;
-use dancelight_runtime::InflationRewards;
-use sp_trie::GenericMemoryDB;
-use sp_trie::cache::{CacheSize, SharedTrieCache};
-use sp_state_machine::MemoryDB;
-use sp_runtime::traits::BlakeTwo256;
-use sp_storage::StateVersion;
-use sp_state_machine::LayoutV1;
-use sp_state_machine::TrieBackend;
-use sp_state_machine::TrieBackendBuilder;
-use sp_state_machine::Ext;
-use frame_support::storage::unhashed;
-use std::sync::atomic::AtomicBool;
 use {
     cumulus_primitives_core::ParaId,
     dancelight_runtime::{
         genesis_config_presets::get_authority_keys_from_seed, AccountId, AllPalletsWithSystem,
-        Balance, Balances, Executive, Header, ParaInherent, Runtime, RuntimeCall, RuntimeOrigin,
-        Timestamp, UncheckedExtrinsic,
+        Balance, Balances, CollatorsInflationRatePerBlock, ContainerRegistrar, Executive,
+        ExternalValidators, Header, InflationRewards, ParaInherent, Runtime, RuntimeCall,
+        RuntimeOrigin, Timestamp, UncheckedExtrinsic, ValidatorsInflationRatePerEra,
     },
     dancelight_runtime_constants::time::SLOT_DURATION,
     dp_container_chain_genesis_data::ContainerChainGenesisData,
@@ -37,7 +21,8 @@ use {
     frame_support::{
         dispatch::GetDispatchInfo,
         pallet_prelude::Weight,
-        traits::{IntegrityTest, OriginTrait, TryState, TryStateSelect},
+        storage::unhashed,
+        traits::{Currency, IntegrityTest, OriginTrait, TryState, TryStateSelect},
         weights::constants::WEIGHT_REF_TIME_PER_SECOND,
         Hashable,
     },
@@ -56,18 +41,25 @@ use {
     sp_core::{sr25519, Decode, Get, Pair, Public, H256},
     sp_inherents::InherentDataProvider,
     sp_runtime::{
-        traits::{Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
+        traits::{BlakeTwo256, Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
         Digest, DigestItem, Perbill, Saturating, Storage,
     },
-    sp_state_machine::BasicExternalities,
+    sp_state_machine::{
+        BasicExternalities, Ext, LayoutV1, MemoryDB, TrieBackend, TrieBackendBuilder,
+    },
+    sp_storage::StateVersion,
+    sp_trie::{
+        cache::{CacheSize, SharedTrieCache},
+        GenericMemoryDB,
+    },
     std::{
         any::TypeId,
-        sync::Arc,
         cell::Cell,
         cmp::max,
         collections::BTreeMap,
         iter,
         marker::PhantomData,
+        sync::{atomic::AtomicBool, Arc},
         time::{Duration, Instant},
     },
 };
@@ -405,20 +397,30 @@ fn get_origin(origin: usize) -> &'static AccountId {
 
 use create_storage::create_storage;
 mod create_storage {
-    use super::*;
-    use trie_db::TrieDBMut;
-    use trie_db::TrieDBMutBuilder;
-    use sp_state_machine::TrieMut;
-    use sp_state_machine::OverlayedChanges;
+    use {
+        super::*,
+        sp_state_machine::{OverlayedChanges, TrieMut},
+        trie_db::{TrieDBMut, TrieDBMutBuilder},
+    };
 
-    pub fn create_storage(mut overlay: OverlayedChanges<BlakeTwo256>, backend: TrieBackend<MemoryDB<BlakeTwo256>, BlakeTwo256>, root: H256, shared_cache: SharedTrieCache<BlakeTwo256>) -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
-        let changes = overlay.drain_storage_changes(&backend, StateVersion::V1).unwrap();
+    pub fn create_storage(
+        mut overlay: OverlayedChanges<BlakeTwo256>,
+        backend: TrieBackend<MemoryDB<BlakeTwo256>, BlakeTwo256>,
+        root: H256,
+        shared_cache: SharedTrieCache<BlakeTwo256>,
+    ) -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
+        let changes = overlay
+            .drain_storage_changes(&backend, StateVersion::V1)
+            .unwrap();
 
         let mut storage = backend.into_storage();
         let mut cache2 = shared_cache.local_cache();
         //let mut root_decoded: H256 = Decode::decode(&mut root1.as_slice()).unwrap();
         let mut root_mut = root.clone();
-        let mut triedbmut: TrieDBMut<LayoutV1<BlakeTwo256>> = TrieDBMutBuilder::from_existing(&mut storage, &mut root_mut).with_optional_cache(None).build();
+        let mut triedbmut: TrieDBMut<LayoutV1<BlakeTwo256>> =
+            TrieDBMutBuilder::from_existing(&mut storage, &mut root_mut)
+                .with_optional_cache(None)
+                .build();
 
         for (k, v) in changes.main_storage_changes {
             if let Some(v) = v {
@@ -675,7 +677,8 @@ fn fuzz_main(data: &[u8]) {
 
         let validators = dancelight_runtime::Session::validators();
         let slot = Slot::from(u64::from(block + 350000000));
-        let authority_index = u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
+        let authority_index =
+            u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
         let pre_digest = Digest {
             logs: vec![DigestItem::PreRuntime(
                 BABE_ENGINE_ID,
@@ -722,14 +725,19 @@ fn fuzz_main(data: &[u8]) {
                 new_era = true;
             }
             if new_era {
-                let new_supply_validators = ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
+                let new_supply_validators =
+                    ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
                 block_rewards.set(block_rewards.get() + new_supply_validators);
             }
         }
 
         Executive::initialize_block(&parent_header);
 
-        Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION + 2_100_000_000_000).unwrap();
+        Timestamp::set(
+            RuntimeOrigin::none(),
+            u64::from(block) * SLOT_DURATION + 2_100_000_000_000,
+        )
+        .unwrap();
 
         Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
             pallet_author_noting::Call::set_latest_author_data { data: () },
@@ -759,14 +767,13 @@ fn fuzz_main(data: &[u8]) {
 
     use sp_runtime::traits::BlakeTwo256;
 
-    use sp_state_machine::OverlayedChanges;
-    use sp_state_machine::TrieBackendBuilder;
-    use sp_state_machine::Ext;
+    use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
     let mut overlay = OverlayedChanges::default();
     let (storage, root, shared_cache) = &*GENESIS_STORAGE;
     let root = *root;
     let cache = shared_cache.local_cache();
-    let mut backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+    let mut backend: TrieBackend<_, BlakeTwo256> =
+        TrieBackendBuilder::new_with_cache(storage, root, cache).build();
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
     sp_externalities::set_and_run_with_externalities(&mut ext, || {

@@ -6,15 +6,10 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
-use std::cmp::min;
 use {
-    dancelight_runtime::{
-        RuntimeCall
-    },
+    dancelight_runtime::RuntimeCall,
     parity_scale_codec::{Decode, DecodeLimit, Encode},
-    std::{
-        iter,
-    },
+    std::{cmp::min, iter},
 };
 
 #[derive(Debug, Encode, Decode)]

@@ -6,65 +6,38 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
-use libfuzzer_sys::arbitrary::Arbitrary;
-use libfuzzer_sys::arbitrary;
-use itertools::{EitherOrBoth, Itertools};
-use serde::{Serialize, Deserialize};
-use std::cmp::min;
-use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Write};
-use frame_support::dispatch::{CallableCallFor as CallableCallForG, DispatchClass, DispatchResultWithPostInfo};
-use starlight_runtime::{AuthorNoting, ExternalValidators, OriginCaller, RuntimeEvent};
-use starlight_runtime::CollatorsInflationRatePerBlock;
-use starlight_runtime::ValidatorsInflationRatePerEra;
-use starlight_runtime::ContainerRegistrar;
-use frame_support::traits::Currency;
-use starlight_runtime::InflationRewards;
-use sp_trie::GenericMemoryDB;
-use sp_trie::cache::{CacheSize, SharedTrieCache};
-use sp_state_machine::MemoryDB;
-use sp_runtime::traits::BlakeTwo256;
-use sp_storage::StateVersion;
-use sp_state_machine::LayoutV1;
-use sp_state_machine::TrieBackend;
-use sp_state_machine::TrieBackendBuilder;
-use sp_state_machine::Ext;
-use frame_support::storage::unhashed;
-use std::sync::atomic::AtomicBool;
-use std::sync::Mutex;
-use libfuzzer_sys::arbitrary::{Unstructured};
-use parity_scale_codec::Output;
-use rand::prelude::IndexedRandom;
-use rand::{Rng, SeedableRng};
-use scale_info::PortableRegistry;
-use scale_value::{Composite, ValueDef};
-use sp_runtime::{DispatchError, DispatchErrorWithPostInfo};
 use {
     cumulus_primitives_core::ParaId,
-    starlight_runtime::{
-        genesis_config_presets::get_authority_keys_from_seed, AccountId, AllPalletsWithSystem,
-        Balance, Balances, Executive, Header, ParaInherent, Runtime, RuntimeCall, RuntimeOrigin,
-        Timestamp, UncheckedExtrinsic,
-    },
-    starlight_runtime_constants::time::SLOT_DURATION,
     dp_container_chain_genesis_data::ContainerChainGenesisData,
     dp_core::well_known_keys::PARAS_HEADS_INDEX,
     frame_metadata::{v15::RuntimeMetadataV15, RuntimeMetadata, RuntimeMetadataPrefixed},
     frame_support::{
-        dispatch::GetDispatchInfo,
+        dispatch::{
+            CallableCallFor as CallableCallForG, DispatchClass, DispatchResultWithPostInfo,
+            GetDispatchInfo,
+        },
         pallet_prelude::Weight,
-        traits::{IntegrityTest, OriginTrait, TryState, TryStateSelect},
+        storage::unhashed,
+        traits::{Currency, IntegrityTest, OriginTrait, TryState, TryStateSelect},
         weights::constants::WEIGHT_REF_TIME_PER_SECOND,
         Hashable,
     },
     frame_system::Account,
+    itertools::{EitherOrBoth, Itertools},
+    libfuzzer_sys::{
+        arbitrary,
+        arbitrary::{Arbitrary, Unstructured},
+    },
     nimbus_primitives::{NimbusId, NIMBUS_ENGINE_ID},
     pallet_balances::{Holds, TotalIssuance},
     pallet_configuration::HostConfiguration,
-    parity_scale_codec::{DecodeLimit, Encode},
+    parity_scale_codec::{DecodeLimit, Encode, Output},
     polkadot_core_primitives::{BlockNumber, Signature},
     primitives::{SchedulerParams, ValidationCode},
-    scale_info::TypeInfo,
+    rand::{prelude::IndexedRandom, Rng, SeedableRng},
+    scale_info::{PortableRegistry, TypeInfo},
+    scale_value::{Composite, ValueDef},
+    serde::{Deserialize, Serialize},
     sp_consensus_aura::{Slot, AURA_ENGINE_ID},
     sp_consensus_babe::{
         digests::{PreDigest, SecondaryPlainPreDigest},
@@ -73,20 +46,35 @@ use {
     sp_core::{sr25519, Decode, Get, Pair, Public, H256},
     sp_inherents::InherentDataProvider,
     sp_runtime::{
-        traits::{Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
-        Digest, DigestItem, Perbill, Saturating, Storage,
+        traits::{BlakeTwo256, Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
+        Digest, DigestItem, DispatchError, DispatchErrorWithPostInfo, Perbill, Saturating, Storage,
     },
-    sp_state_machine::BasicExternalities,
+    sp_state_machine::{
+        BasicExternalities, Ext, LayoutV1, MemoryDB, TrieBackend, TrieBackendBuilder,
+    },
+    sp_storage::StateVersion,
+    sp_trie::{
+        cache::{CacheSize, SharedTrieCache},
+        GenericMemoryDB,
+    },
+    starlight_runtime::{
+        genesis_config_presets::get_authority_keys_from_seed, AccountId, AllPalletsWithSystem,
+        AuthorNoting, Balance, Balances, CollatorsInflationRatePerBlock, ContainerRegistrar,
+        Executive, ExternalValidators, Header, InflationRewards, OriginCaller, ParaInherent,
+        Runtime, RuntimeCall, RuntimeEvent, RuntimeOrigin, Timestamp, UncheckedExtrinsic,
+        ValidatorsInflationRatePerEra,
+    },
+    starlight_runtime_constants::time::SLOT_DURATION,
     std::{
         any::TypeId,
-        sync::Arc,
         cell::Cell,
-        cmp::max,
-        collections::BTreeMap,
-        collections::BTreeSet,
-        collections::HashSet,
+        cmp::{max, min},
+        collections::{BTreeMap, BTreeSet, HashSet},
+        fs::{File, OpenOptions},
+        io::{BufWriter, Write},
         iter,
         marker::PhantomData,
+        sync::{atomic::AtomicBool, Arc, Mutex},
         time::{Duration, Instant},
     },
 };
@@ -123,7 +111,9 @@ fn none_can_call(call: &RuntimeCall) -> bool {
     match call {
         // This panics:
         // DidSetContainerAuthorData must be updated only once in a block
-        RuntimeCall::AuthorNoting(CallableCallFor::<AuthorNoting>::set_latest_author_data { .. }) => false,
+        RuntimeCall::AuthorNoting(CallableCallFor::<AuthorNoting>::set_latest_author_data {
+            ..
+        }) => false,
         RuntimeCall::Timestamp(CallableCallFor::<Timestamp>::set { .. }) => false,
         _ => true,
     }
@@ -468,20 +458,30 @@ fn get_origin(origin: usize) -> &'static AccountId {
 
 use create_storage::create_storage;
 mod create_storage {
-    use super::*;
-    use trie_db::TrieDBMut;
-    use trie_db::TrieDBMutBuilder;
-    use sp_state_machine::TrieMut;
-    use sp_state_machine::OverlayedChanges;
+    use {
+        super::*,
+        sp_state_machine::{OverlayedChanges, TrieMut},
+        trie_db::{TrieDBMut, TrieDBMutBuilder},
+    };
 
-    pub fn create_storage(mut overlay: OverlayedChanges<BlakeTwo256>, backend: TrieBackend<MemoryDB<BlakeTwo256>, BlakeTwo256>, root: H256, shared_cache: SharedTrieCache<BlakeTwo256>) -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
-        let changes = overlay.drain_storage_changes(&backend, StateVersion::V1).unwrap();
+    pub fn create_storage(
+        mut overlay: OverlayedChanges<BlakeTwo256>,
+        backend: TrieBackend<MemoryDB<BlakeTwo256>, BlakeTwo256>,
+        root: H256,
+        shared_cache: SharedTrieCache<BlakeTwo256>,
+    ) -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
+        let changes = overlay
+            .drain_storage_changes(&backend, StateVersion::V1)
+            .unwrap();
 
         let mut storage = backend.into_storage();
         let mut cache2 = shared_cache.local_cache();
         //let mut root_decoded: H256 = Decode::decode(&mut root1.as_slice()).unwrap();
         let mut root_mut = root.clone();
-        let mut triedbmut: TrieDBMut<LayoutV1<BlakeTwo256>> = TrieDBMutBuilder::from_existing(&mut storage, &mut root_mut).with_optional_cache(None).build();
+        let mut triedbmut: TrieDBMut<LayoutV1<BlakeTwo256>> =
+            TrieDBMutBuilder::from_existing(&mut storage, &mut root_mut)
+                .with_optional_cache(None)
+                .build();
 
         for (k, v) in changes.main_storage_changes {
             if let Some(v) = v {
@@ -673,7 +673,6 @@ lazy_static::lazy_static! {
     static ref VALID_ACCOUNT_IDS_LEN: Mutex<usize> = Mutex::new(0);
 }
 
-
 fn list_type_ids(registry: &PortableRegistry) {
     for x in registry.types.iter() {
         let path = x.ty.path.to_string();
@@ -691,7 +690,11 @@ fn find_type_id(registry: &PortableRegistry, path_contains: &str) -> u32 {
         }
     });
     let found: Vec<u32> = type_id.collect();
-    assert_eq!(found.len(), 1, "Couldn't find type id or found more than 1 type");
+    assert_eq!(
+        found.len(),
+        1,
+        "Couldn't find type id or found more than 1 type"
+    );
 
     found.into_iter().next().unwrap()
 }
@@ -746,10 +749,12 @@ impl SeenValues2 {
     }
 }
 
-
-fn test_mutate_value<R: Rng + ?Sized>(val: &mut scale_value::Value<u32>, seen_values: &mut SeenValues, rng: &mut R) {
+fn test_mutate_value<R: Rng + ?Sized>(
+    val: &mut scale_value::Value<u32>,
+    seen_values: &mut SeenValues,
+    rng: &mut R,
+) {
     if val.context == *ACCOUNT_ID_TYPE_ID {
-
         seen_values.account_id.push(val.clone());
 
         let new_val = {
@@ -766,40 +771,40 @@ fn test_mutate_value<R: Rng + ?Sized>(val: &mut scale_value::Value<u32>, seen_va
     }
 
     match &mut val.value {
-        ValueDef::Composite(x) => {
-            match x {
-                Composite::Named(vs) => {
-                    for (k, v) in vs {
-                        test_mutate_value(v, seen_values, rng);
-                    }
-                }
-                Composite::Unnamed(vs) => {
-                    for v in vs {
-                        test_mutate_value(v, seen_values, rng);
-                    }
+        ValueDef::Composite(x) => match x {
+            Composite::Named(vs) => {
+                for (k, v) in vs {
+                    test_mutate_value(v, seen_values, rng);
                 }
             }
-        }
-        ValueDef::Variant(x) => {
-            match &mut x.values {
-                Composite::Named(vs) => {
-                    for (k, v) in vs {
-                        test_mutate_value(v, seen_values, rng);
-                    }
-                }
-                Composite::Unnamed(vs) => {
-                    for v in vs {
-                        test_mutate_value(v, seen_values, rng);
-                    }
+            Composite::Unnamed(vs) => {
+                for v in vs {
+                    test_mutate_value(v, seen_values, rng);
                 }
             }
-        }
+        },
+        ValueDef::Variant(x) => match &mut x.values {
+            Composite::Named(vs) => {
+                for (k, v) in vs {
+                    test_mutate_value(v, seen_values, rng);
+                }
+            }
+            Composite::Unnamed(vs) => {
+                for v in vs {
+                    test_mutate_value(v, seen_values, rng);
+                }
+            }
+        },
         ValueDef::BitSequence(_) => {}
         ValueDef::Primitive(_) => {}
     }
 }
 
-fn test_mutate<R: Rng + ?Sized>(extr: &mut [ExtrOrPseudo], seen_values: &mut SeenValues, rng: &mut R) {
+fn test_mutate<R: Rng + ?Sized>(
+    extr: &mut [ExtrOrPseudo],
+    seen_values: &mut SeenValues,
+    rng: &mut R,
+) {
     for extr_or_ps in extr {
         let extr = match extr_or_ps {
             ExtrOrPseudo::Extr(extr) => extr,
@@ -813,13 +818,14 @@ fn test_mutate<R: Rng + ?Sized>(extr: &mut [ExtrOrPseudo], seen_values: &mut See
         let registry = &metadata.types;
         let type_id = *RUNTIME_CALL_TYPE_ID;
         //let (type_id, registry) = make_type::<Vec<ExtrOrPseudo>>();
-        let mut new_value = match scale_value::scale::decode_as_type(&mut &*bytes, type_id, registry) {
-            Ok(x) => x,
-            Err(e) => {
-                //log::error!("{}", e);
-                continue;
-            }
-        };
+        let mut new_value =
+            match scale_value::scale::decode_as_type(&mut &*bytes, type_id, registry) {
+                Ok(x) => x,
+                Err(e) => {
+                    //log::error!("{}", e);
+                    continue;
+                }
+            };
 
         //let sss = serde_json::to_string(&new_value).unwrap();
         //log::info!("JSON EXTR: {:?}", sss);
@@ -867,34 +873,30 @@ fn visit_value(val: &scale_value::Value<u32>, seen_values: &mut SeenValues2) {
      */
 
     match &val.value {
-        ValueDef::Composite(x) => {
-            match x {
-                Composite::Named(vs) => {
-                    for (k, v) in vs {
-                        visit_value(v, seen_values);
-                    }
-                }
-                Composite::Unnamed(vs) => {
-                    for v in vs {
-                        visit_value(v, seen_values);
-                    }
+        ValueDef::Composite(x) => match x {
+            Composite::Named(vs) => {
+                for (k, v) in vs {
+                    visit_value(v, seen_values);
                 }
             }
-        }
-        ValueDef::Variant(x) => {
-            match &x.values {
-                Composite::Named(vs) => {
-                    for (k, v) in vs {
-                        visit_value(v, seen_values);
-                    }
-                }
-                Composite::Unnamed(vs) => {
-                    for v in vs {
-                        visit_value(v, seen_values);
-                    }
+            Composite::Unnamed(vs) => {
+                for v in vs {
+                    visit_value(v, seen_values);
                 }
             }
-        }
+        },
+        ValueDef::Variant(x) => match &x.values {
+            Composite::Named(vs) => {
+                for (k, v) in vs {
+                    visit_value(v, seen_values);
+                }
+            }
+            Composite::Unnamed(vs) => {
+                for v in vs {
+                    visit_value(v, seen_values);
+                }
+            }
+        },
         ValueDef::BitSequence(_) => {}
         ValueDef::Primitive(_) => {}
     }
@@ -1000,7 +1002,8 @@ fn fuzz_main(data: &[u8]) {
 
         let validators = starlight_runtime::Session::validators();
         let slot = Slot::from(u64::from(block + 350000000));
-        let authority_index = u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
+        let authority_index =
+            u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
         let pre_digest = Digest {
             logs: vec![DigestItem::PreRuntime(
                 BABE_ENGINE_ID,
@@ -1047,14 +1050,19 @@ fn fuzz_main(data: &[u8]) {
                 new_era = true;
             }
             if new_era {
-                let new_supply_validators = ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
+                let new_supply_validators =
+                    ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
                 block_rewards.set(block_rewards.get() + new_supply_validators);
             }
         }
 
         Executive::initialize_block(&parent_header);
 
-        Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION + 2_100_000_000_000).unwrap();
+        Timestamp::set(
+            RuntimeOrigin::none(),
+            u64::from(block) * SLOT_DURATION + 2_100_000_000_000,
+        )
+        .unwrap();
 
         Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
             pallet_author_noting::Call::set_latest_author_data { data: () },
@@ -1084,13 +1092,12 @@ fn fuzz_main(data: &[u8]) {
 
     use sp_runtime::traits::BlakeTwo256;
 
-    use sp_state_machine::OverlayedChanges;
-    use sp_state_machine::TrieBackendBuilder;
-    use sp_state_machine::Ext;
+    use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
     let mut overlay = OverlayedChanges::default();
     let (storage, root, shared_cache) = &*GENESIS_STORAGE;
     let root = *root;
-    let backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new_with_cache(storage, root, shared_cache.local_cache()).build();
+    let backend: TrieBackend<_, BlakeTwo256> =
+        TrieBackendBuilder::new_with_cache(storage, root, shared_cache.local_cache()).build();
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
@@ -1168,17 +1175,16 @@ fn fuzz_main(data: &[u8]) {
         let mut origin_try_root_first = false;
         let mut origin_retry_as_none = true;
         let mut valid_account_ids = SeenValues2::default();
-        valid_account_ids.account_id.extend(INTERESTING_ACCOUNTS.iter().cloned());
+        valid_account_ids
+            .account_id
+            .extend(INTERESTING_ACCOUNTS.iter().cloned());
 
         {
             let events_all = starlight_runtime::System::events();
             let (_, events) = events_all.split_at(num_events_before_inner);
-            let events: Vec<_> = events.iter().map(|ev| {
-                &ev.event
-            }).collect();
+            let events: Vec<_> = events.iter().map(|ev| &ev.event).collect();
             visit_events(&events, &mut valid_account_ids);
         }
-
 
         for extrinsic in extrinsics {
             // For testing, only create 1 block, do not even finalize it
@@ -1202,15 +1208,18 @@ fn fuzz_main(data: &[u8]) {
                     //   then the weight will be a million times greater than expected. So in practice this extrinsic cannot be called with this
                     //   arg, so we must skip it here. An example is `RuntimeCall::FellowshipCollective(Call::remove_member {..})`
                     let info = extrinsic.get_dispatch_info();
-                    if info.call_weight.ref_time() + info.extension_weight.ref_time() >= 2 * WEIGHT_REF_TIME_PER_SECOND /*&&
-                        match &extrinsic {
-                            // Whitelist some extrinsics with big weights
-                            RuntimeCall::Configuration(runtime_parachains::configuration::Call::set_hrmp_open_request_ttl { .. }) => false,
-                            RuntimeCall::Hrmp(CallableCallFor::<starlight_runtime::Hrmp>::force_process_hrmp_close { .. }) => false,
-                            // I guess everything under HRMP is disabled
-                            RuntimeCall::Hrmp(..) => false,
-                            _ => true,
-                        }*/ {
+                    if info.call_weight.ref_time() + info.extension_weight.ref_time()
+                        >= 2 * WEIGHT_REF_TIME_PER_SECOND
+                    /*&&
+                    match &extrinsic {
+                        // Whitelist some extrinsics with big weights
+                        RuntimeCall::Configuration(runtime_parachains::configuration::Call::set_hrmp_open_request_ttl { .. }) => false,
+                        RuntimeCall::Hrmp(CallableCallFor::<starlight_runtime::Hrmp>::force_process_hrmp_close { .. }) => false,
+                        // I guess everything under HRMP is disabled
+                        RuntimeCall::Hrmp(..) => false,
+                        _ => true,
+                    }*/
+                    {
                         //log::error!(target: "fuzz::call", "    call:       {extrinsic:?}");
                         //panic!("Extrinsic would exhaust block weight");
                         continue;
@@ -1223,7 +1232,12 @@ fn fuzz_main(data: &[u8]) {
                             // invalid account ids
                             return;
                         }
-                        if account_ids_in_call.account_id.difference(&valid_account_ids.account_id).count() > 0 {
+                        if account_ids_in_call
+                            .account_id
+                            .difference(&valid_account_ids.account_id)
+                            .count()
+                            > 0
+                        {
                             // Invalid input, abort
                             return;
                         }
@@ -1262,7 +1276,9 @@ fn fuzz_main(data: &[u8]) {
                                 // Retry using a different origin
                                 let origin = if origin_is_root {
                                     // First we tried as root, now retry as signed origin
-                                    Some(RuntimeOrigin::signed(get_origin(origin_u8.into()).clone()))
+                                    Some(RuntimeOrigin::signed(
+                                        get_origin(origin_u8.into()).clone(),
+                                    ))
                                 } else {
                                     // Retry as root if allowed
                                     if root_can_call(&extrinsic) {
@@ -1307,13 +1323,15 @@ fn fuzz_main(data: &[u8]) {
                         // See function validate_transaction in
                         // substrate/frame/executive/src/lib.rs
                         let is_mandatory = match info.class {
-                            DispatchClass::Mandatory => {
-                                true
-                            }
+                            DispatchClass::Mandatory => true,
                             _ => false,
                         };
                         // Retry using a different origin
-                        let origin = if !is_mandatory && none_can_call(&extrinsic) { Some(RuntimeOrigin::none()) } else { None };
+                        let origin = if !is_mandatory && none_can_call(&extrinsic) {
+                            Some(RuntimeOrigin::none())
+                        } else {
+                            None
+                        };
                         if let Some(origin) = origin {
                             log::debug!(target: "fuzz::result", "    result:     {}", match &res {
                                 Ok(x) => {
@@ -1362,16 +1380,16 @@ fn fuzz_main(data: &[u8]) {
                     // Extend valid account ids for next call by looking at events
                     let events_all = starlight_runtime::System::events();
                     let (_, events) = events_all.split_at(num_events_before_inner);
-                    let events: Vec<_> = events.iter().map(|ev| {
-                        &ev.event
-                    }).collect();
+                    let events: Vec<_> = events.iter().map(|ev| &ev.event).collect();
                     visit_events(&events, &mut valid_account_ids);
                     num_events_before_inner = events_all.len();
                 }
                 ExtrOrPseudo::Pseudo(fuzz_call) => {
                     match fuzz_call {
                         FuzzRuntimeCall::SetOrigin {
-                            origin: new_origin, retry_as_root, try_root_first
+                            origin: new_origin,
+                            retry_as_root,
+                            try_root_first,
                         } => {
                             origin = new_origin;
                             origin_retry_as_root = retry_as_root;
@@ -1403,10 +1421,9 @@ fn fuzz_main(data: &[u8]) {
         let events_all = starlight_runtime::System::events();
         let (_, events) = events_all.split_at(num_events_before);
         use std::hash::{BuildHasherDefault, DefaultHasher};
-        static SEEN_EVENTS: Mutex<HashSet<(u8, u8), BuildHasherDefault<DefaultHasher>>> = Mutex::new(HashSet::with_hasher(BuildHasherDefault::new()));
-        let mut events: Vec<_> = events.iter().map(|ev| {
-            &ev.event
-        }).collect();
+        static SEEN_EVENTS: Mutex<HashSet<(u8, u8), BuildHasherDefault<DefaultHasher>>> =
+            Mutex::new(HashSet::with_hasher(BuildHasherDefault::new()));
+        let mut events: Vec<_> = events.iter().map(|ev| &ev.event).collect();
 
         let mut len_mutex = VALID_ACCOUNT_IDS_LEN.lock().unwrap();
         let prev_len = *len_mutex;
@@ -1450,7 +1467,8 @@ fn fuzz_main(data: &[u8]) {
             .write(true)
             .create(true)
             .append(true)
-            .open("/tmp/fuzz_events.txt").expect("failed to open /tmp/fuzz_events.txt");
+            .open("/tmp/fuzz_events.txt")
+            .expect("failed to open /tmp/fuzz_events.txt");
         for event in events {
             let x_enc = event.encode();
             let first_2_bytes = (x_enc[0], x_enc[1]);
@@ -1461,7 +1479,12 @@ fn fuzz_main(data: &[u8]) {
         // Assert that it is not possible to mint tokens using the allowed extrinsics
         let final_total_issuance = TotalIssuance::<Runtime>::get();
         // Some extrinsics burn tokens so final issuance can be lower
-        assert!(initial_total_issuance >= final_total_issuance, "{} >= {}", initial_total_issuance, final_total_issuance);
+        assert!(
+            initial_total_issuance >= final_total_issuance,
+            "{} >= {}",
+            initial_total_issuance,
+            final_total_issuance
+        );
     });
 }
 
@@ -1475,13 +1498,12 @@ fn fuzz_init() {
     // Initialize stuff related to metadata (needs externalities)
     use sp_runtime::traits::BlakeTwo256;
 
-    use sp_state_machine::OverlayedChanges;
-    use sp_state_machine::TrieBackendBuilder;
-    use sp_state_machine::Ext;
+    use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
     let mut overlay = OverlayedChanges::default();
     let (storage, root, shared_cache) = &*GENESIS_STORAGE;
     let root = *root;
-    let backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new_with_cache(storage, root, shared_cache.local_cache()).build();
+    let backend: TrieBackend<_, BlakeTwo256> =
+        TrieBackendBuilder::new_with_cache(storage, root, shared_cache.local_cache()).build();
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
@@ -1494,18 +1516,18 @@ fn fuzz_init() {
 // Anything below this line will not be included in the coverage script
 libfuzzer_sys::fuzz_target!(init: fuzz_init(), |data: &[u8]| fuzz_main(data));
 
-fn extrinsics_iter_ignore_errors(mut extrinsic_data: &[u8]) -> impl Iterator<Item = RuntimeCall> + use<'_> {
-    iter::from_fn(move || {
-        loop {
-            match DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data) {
-                Ok(x) => return Some(x),
-                Err(_e) => {
-                    if extrinsic_data.is_empty() {
-                        return None
-                    } else {
-                        extrinsic_data = &extrinsic_data[1..];
-                        continue;
-                    }
+fn extrinsics_iter_ignore_errors(
+    mut extrinsic_data: &[u8],
+) -> impl Iterator<Item = RuntimeCall> + use<'_> {
+    iter::from_fn(move || loop {
+        match DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data) {
+            Ok(x) => return Some(x),
+            Err(_e) => {
+                if extrinsic_data.is_empty() {
+                    return None;
+                } else {
+                    extrinsic_data = &extrinsic_data[1..];
+                    continue;
                 }
             }
         }
@@ -1518,7 +1540,8 @@ fn extrinsics_iter(mut extrinsic_data: &[u8]) -> impl Iterator<Item = ExtrOrPseu
 
 struct CursorOutputIgnoreErrors<W>(std::io::Cursor<W>);
 impl<W: std::io::Write> parity_scale_codec::Output for CursorOutputIgnoreErrors<W>
-where std::io::Cursor<W>: std::io::Write,
+where
+    std::io::Cursor<W>: std::io::Write,
 {
     fn write(&mut self, bytes: &[u8]) {
         // Ignore errors
@@ -1559,8 +1582,8 @@ fn fuzz_crossover_extr_or_pseudo(data1: &[u8], data2: &[u8], out: &mut [u8], see
             'outer: for pair in extr1.zip_longest(extr2) {
                 let extrs: Vec<_> = match pair {
                     EitherOrBoth::Both(x, y) => vec![x, y],
-                    EitherOrBoth::Left(x)    => vec![x],
-                    EitherOrBoth::Right(y)   => vec![y],
+                    EitherOrBoth::Left(x) => vec![x],
+                    EitherOrBoth::Right(y) => vec![y],
                 };
                 for extr in extrs {
                     if !keep_all {
@@ -1576,13 +1599,15 @@ fn fuzz_crossover_extr_or_pseudo(data1: &[u8], data2: &[u8], out: &mut [u8], see
                 }
             }
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 
     out_writer.0.position() as usize
 }
 
-libfuzzer_sys::fuzz_crossover!(|data1: &[u8], data2: &[u8], out: &mut [u8], seed: u32| { fuzz_crossover_extr_or_pseudo(data1, data2, out, seed) });
+libfuzzer_sys::fuzz_crossover!(|data1: &[u8], data2: &[u8], out: &mut [u8], seed: u32| {
+    fuzz_crossover_extr_or_pseudo(data1, data2, out, seed)
+});
 
 fn fuzz_mutator_extr_or_pseudo(data: &mut [u8], size: usize, max_size: usize, seed: u32) -> usize {
     let mut data = data;
@@ -1647,7 +1672,10 @@ fn fuzz_mutator_extr_or_pseudo(data: &mut [u8], size: usize, max_size: usize, se
         // No more ops than items
         let max_size = 2 * extrs.len();
         let arb_data_len = rng.random_range(0..=max_size);
-        let arb_data: Vec<u8> = (0..arb_data_len).map(|_| rng.random_range(0..extrs.len())).map(|x| x as u8).collect();
+        let arb_data: Vec<u8> = (0..arb_data_len)
+            .map(|_| rng.random_range(0..extrs.len()))
+            .map(|x| x as u8)
+            .collect();
         let mut arb_data = Unstructured::new(&arb_data);
         let ops = <Vec<Op> as Arbitrary>::arbitrary(&mut arb_data).unwrap_or_default();
 
@@ -1689,7 +1717,10 @@ fn fuzz_mutator_extr_or_pseudo(data: &mut [u8], size: usize, max_size: usize, se
                 v.extend(extrinsics_iter_ignore_errors(&rand_data));
             }
 
-            log::trace!("Generated {} new extrs purely from fresh random data", v.len());
+            log::trace!(
+                "Generated {} new extrs purely from fresh random data",
+                v.len()
+            );
 
             v
         }
@@ -1722,8 +1753,6 @@ fn fuzz_mutator_extr_or_pseudo(data: &mut [u8], size: usize, max_size: usize, se
     }
 }
 
-libfuzzer_sys::fuzz_mutator!(
-    |data: &mut [u8], size: usize, max_size: usize, seed: u32| {
-        fuzz_mutator_extr_or_pseudo(data, size, max_size, seed)
-    }
-);
+libfuzzer_sys::fuzz_mutator!(|data: &mut [u8], size: usize, max_size: usize, seed: u32| {
+    fuzz_mutator_extr_or_pseudo(data, size, max_size, seed)
+});

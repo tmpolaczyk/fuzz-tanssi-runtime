@@ -675,7 +675,7 @@ fn fuzz_main(data: &[u8]) {
     let size = data.len();
     use parity_scale_codec::DecodeAll;
 
-    let x: pallet_stream_payment::StreamOf::<Runtime> = match DecodeAll::decode_all(&mut data) {
+    let x: pallet_stream_payment::StreamOf<Runtime> = match DecodeAll::decode_all(&mut data) {
         Ok(x) => x,
         Err(_e) => return,
     };

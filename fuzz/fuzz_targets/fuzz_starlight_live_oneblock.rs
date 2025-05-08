@@ -6,45 +6,23 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
-use std::io::Write;
-use frame_support::dispatch::CallableCallFor as CallableCallForG;
-use dancelight_runtime::{ExternalValidators, OriginCaller};
-use dancelight_runtime::CollatorsInflationRatePerBlock;
-use dancelight_runtime::ValidatorsInflationRatePerEra;
-use dancelight_runtime::ContainerRegistrar;
-use frame_support::traits::Currency;
-use dancelight_runtime::InflationRewards;
-use sp_trie::GenericMemoryDB;
-use sp_trie::cache::{CacheSize, SharedTrieCache};
-use sp_state_machine::MemoryDB;
-use sp_runtime::traits::BlakeTwo256;
-use sp_storage::StateVersion;
-use sp_state_machine::LayoutV1;
-use sp_state_machine::TrieBackend;
-use sp_state_machine::TrieBackendBuilder;
-use sp_state_machine::Ext;
-use frame_support::storage::unhashed;
-use std::sync::atomic::AtomicBool;
-use rand::{Rng, SeedableRng};
-use rand::seq::IndexedRandom;
-use scale_info::PortableRegistry;
-use scale_value::{Composite, ValueDef};
-use sp_runtime::DispatchError;
 use {
     cumulus_primitives_core::ParaId,
     dancelight_runtime::{
         genesis_config_presets::get_authority_keys_from_seed, AccountId, AllPalletsWithSystem,
-        Balance, Balances, Executive, Header, ParaInherent, Runtime, RuntimeCall, RuntimeOrigin,
-        Timestamp, UncheckedExtrinsic,
+        Balance, Balances, CollatorsInflationRatePerBlock, ContainerRegistrar, Executive,
+        ExternalValidators, Header, InflationRewards, OriginCaller, ParaInherent, Runtime,
+        RuntimeCall, RuntimeOrigin, Timestamp, UncheckedExtrinsic, ValidatorsInflationRatePerEra,
     },
     dancelight_runtime_constants::time::SLOT_DURATION,
     dp_container_chain_genesis_data::ContainerChainGenesisData,
     dp_core::well_known_keys::PARAS_HEADS_INDEX,
     frame_metadata::{v15::RuntimeMetadataV15, RuntimeMetadata, RuntimeMetadataPrefixed},
     frame_support::{
-        dispatch::GetDispatchInfo,
+        dispatch::{CallableCallFor as CallableCallForG, GetDispatchInfo},
         pallet_prelude::Weight,
-        traits::{IntegrityTest, OriginTrait, TryState, TryStateSelect},
+        storage::unhashed,
+        traits::{Currency, IntegrityTest, OriginTrait, TryState, TryStateSelect},
         weights::constants::WEIGHT_REF_TIME_PER_SECOND,
         Hashable,
     },
@@ -55,6 +33,9 @@ use {
     parity_scale_codec::{DecodeLimit, Encode},
     polkadot_core_primitives::{BlockNumber, Signature},
     primitives::{SchedulerParams, ValidationCode},
+    rand::{seq::IndexedRandom, Rng, SeedableRng},
+    scale_info::{PortableRegistry, TypeInfo},
+    scale_value::{Composite, ValueDef},
     sp_consensus_aura::{Slot, AURA_ENGINE_ID},
     sp_consensus_babe::{
         digests::{PreDigest, SecondaryPlainPreDigest},
@@ -63,19 +44,26 @@ use {
     sp_core::{sr25519, Decode, Get, Pair, Public, H256},
     sp_inherents::InherentDataProvider,
     sp_runtime::{
-        traits::{Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
-        Digest, DigestItem, Perbill, Saturating, Storage,
+        traits::{BlakeTwo256, Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
+        Digest, DigestItem, DispatchError, Perbill, Saturating, Storage,
     },
-    scale_info::TypeInfo,
-    sp_state_machine::BasicExternalities,
+    sp_state_machine::{
+        BasicExternalities, Ext, LayoutV1, MemoryDB, TrieBackend, TrieBackendBuilder,
+    },
+    sp_storage::StateVersion,
+    sp_trie::{
+        cache::{CacheSize, SharedTrieCache},
+        GenericMemoryDB,
+    },
     std::{
         any::TypeId,
-        sync::Arc,
         cell::Cell,
         cmp::max,
         collections::BTreeMap,
+        io::Write,
         iter,
         marker::PhantomData,
+        sync::{atomic::AtomicBool, Arc},
         time::{Duration, Instant},
     },
 };
@@ -446,20 +434,30 @@ fn get_origin(origin: usize) -> &'static AccountId {
 
 use create_storage::create_storage;
 mod create_storage {
-    use super::*;
-    use trie_db::TrieDBMut;
-    use trie_db::TrieDBMutBuilder;
-    use sp_state_machine::TrieMut;
-    use sp_state_machine::OverlayedChanges;
+    use {
+        super::*,
+        sp_state_machine::{OverlayedChanges, TrieMut},
+        trie_db::{TrieDBMut, TrieDBMutBuilder},
+    };
 
-    pub fn create_storage(mut overlay: OverlayedChanges<BlakeTwo256>, backend: TrieBackend<MemoryDB<BlakeTwo256>, BlakeTwo256>, root: H256, shared_cache: SharedTrieCache<BlakeTwo256>) -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
-        let changes = overlay.drain_storage_changes(&backend, StateVersion::V1).unwrap();
+    pub fn create_storage(
+        mut overlay: OverlayedChanges<BlakeTwo256>,
+        backend: TrieBackend<MemoryDB<BlakeTwo256>, BlakeTwo256>,
+        root: H256,
+        shared_cache: SharedTrieCache<BlakeTwo256>,
+    ) -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
+        let changes = overlay
+            .drain_storage_changes(&backend, StateVersion::V1)
+            .unwrap();
 
         let mut storage = backend.into_storage();
         let mut cache2 = shared_cache.local_cache();
         //let mut root_decoded: H256 = Decode::decode(&mut root1.as_slice()).unwrap();
         let mut root_mut = root.clone();
-        let mut triedbmut: TrieDBMut<LayoutV1<BlakeTwo256>> = TrieDBMutBuilder::from_existing(&mut storage, &mut root_mut).with_optional_cache(None).build();
+        let mut triedbmut: TrieDBMut<LayoutV1<BlakeTwo256>> =
+            TrieDBMutBuilder::from_existing(&mut storage, &mut root_mut)
+                .with_optional_cache(None)
+                .build();
 
         for (k, v) in changes.main_storage_changes {
             if let Some(v) = v {
@@ -655,7 +653,11 @@ fn find_type_id(registry: &PortableRegistry, path_contains: &str) -> u32 {
         }
     });
     let found: Vec<u32> = type_id.collect();
-    assert_eq!(found.len(), 1, "Couldn't find type id or found more than 1 type");
+    assert_eq!(
+        found.len(),
+        1,
+        "Couldn't find type id or found more than 1 type"
+    );
 
     found.into_iter().next().unwrap()
 }
@@ -696,12 +698,15 @@ fn init_logger() {
 
 #[derive(Default)]
 struct SeenValues {
-    account_id: Vec<scale_value::Value<u32>>
+    account_id: Vec<scale_value::Value<u32>>,
 }
 
-fn test_mutate_value<R: Rng + ?Sized>(val: &mut scale_value::Value<u32>, seen_values: &mut SeenValues, rng: &mut R) {
+fn test_mutate_value<R: Rng + ?Sized>(
+    val: &mut scale_value::Value<u32>,
+    seen_values: &mut SeenValues,
+    rng: &mut R,
+) {
     if val.context == *ACCOUNT_ID_TYPE_ID {
-
         seen_values.account_id.push(val.clone());
 
         let new_val = {
@@ -718,40 +723,40 @@ fn test_mutate_value<R: Rng + ?Sized>(val: &mut scale_value::Value<u32>, seen_va
     }
 
     match &mut val.value {
-        ValueDef::Composite(x) => {
-            match x {
-                Composite::Named(vs) => {
-                    for (k, v) in vs {
-                        test_mutate_value(v, seen_values, rng);
-                    }
-                }
-                Composite::Unnamed(vs) => {
-                    for v in vs {
-                        test_mutate_value(v, seen_values, rng);
-                    }
+        ValueDef::Composite(x) => match x {
+            Composite::Named(vs) => {
+                for (k, v) in vs {
+                    test_mutate_value(v, seen_values, rng);
                 }
             }
-        }
-        ValueDef::Variant(x) => {
-            match &mut x.values {
-                Composite::Named(vs) => {
-                    for (k, v) in vs {
-                        test_mutate_value(v, seen_values, rng);
-                    }
-                }
-                Composite::Unnamed(vs) => {
-                    for v in vs {
-                        test_mutate_value(v, seen_values, rng);
-                    }
+            Composite::Unnamed(vs) => {
+                for v in vs {
+                    test_mutate_value(v, seen_values, rng);
                 }
             }
-        }
+        },
+        ValueDef::Variant(x) => match &mut x.values {
+            Composite::Named(vs) => {
+                for (k, v) in vs {
+                    test_mutate_value(v, seen_values, rng);
+                }
+            }
+            Composite::Unnamed(vs) => {
+                for v in vs {
+                    test_mutate_value(v, seen_values, rng);
+                }
+            }
+        },
         ValueDef::BitSequence(_) => {}
         ValueDef::Primitive(_) => {}
     }
 }
 
-fn test_mutate<R: Rng + ?Sized>(extr: &mut [ExtrOrPseudo], seen_values: &mut SeenValues, rng: &mut R) {
+fn test_mutate<R: Rng + ?Sized>(
+    extr: &mut [ExtrOrPseudo],
+    seen_values: &mut SeenValues,
+    rng: &mut R,
+) {
     for extr_or_ps in extr {
         let extr = match extr_or_ps {
             ExtrOrPseudo::Extr(extr) => extr,
@@ -765,13 +770,14 @@ fn test_mutate<R: Rng + ?Sized>(extr: &mut [ExtrOrPseudo], seen_values: &mut See
         let registry = &metadata.types;
         let type_id = *RUNTIME_CALL_TYPE_ID;
         //let (type_id, registry) = make_type::<Vec<ExtrOrPseudo>>();
-        let mut new_value = match scale_value::scale::decode_as_type(&mut &*bytes, type_id, registry) {
-            Ok(x) => x,
-            Err(e) => {
-                //log::error!("{}", e);
-                continue;
-            }
-        };
+        let mut new_value =
+            match scale_value::scale::decode_as_type(&mut &*bytes, type_id, registry) {
+                Ok(x) => x,
+                Err(e) => {
+                    //log::error!("{}", e);
+                    continue;
+                }
+            };
 
         //let sss = serde_json::to_string(&new_value).unwrap();
         //log::info!("JSON EXTR: {:?}", sss);
@@ -851,7 +857,8 @@ fn fuzz_main(data: &[u8]) {
 
         let validators = dancelight_runtime::Session::validators();
         let slot = Slot::from(u64::from(block + 350000000));
-        let authority_index = u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
+        let authority_index =
+            u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
         let pre_digest = Digest {
             logs: vec![DigestItem::PreRuntime(
                 BABE_ENGINE_ID,
@@ -898,14 +905,19 @@ fn fuzz_main(data: &[u8]) {
                 new_era = true;
             }
             if new_era {
-                let new_supply_validators = ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
+                let new_supply_validators =
+                    ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
                 block_rewards.set(block_rewards.get() + new_supply_validators);
             }
         }
 
         Executive::initialize_block(&parent_header);
 
-        Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION + 2_100_000_000_000).unwrap();
+        Timestamp::set(
+            RuntimeOrigin::none(),
+            u64::from(block) * SLOT_DURATION + 2_100_000_000_000,
+        )
+        .unwrap();
 
         Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
             pallet_author_noting::Call::set_latest_author_data { data: () },
@@ -935,14 +947,13 @@ fn fuzz_main(data: &[u8]) {
 
     use sp_runtime::traits::BlakeTwo256;
 
-    use sp_state_machine::OverlayedChanges;
-    use sp_state_machine::TrieBackendBuilder;
-    use sp_state_machine::Ext;
+    use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
     let mut overlay = OverlayedChanges::default();
     let (storage, root, shared_cache) = &*GENESIS_STORAGE;
     let root = *root;
     let cache = shared_cache.local_cache();
-    let mut backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+    let mut backend: TrieBackend<_, BlakeTwo256> =
+        TrieBackendBuilder::new_with_cache(storage, root, cache).build();
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
@@ -1037,15 +1048,18 @@ fn fuzz_main(data: &[u8]) {
                     //   then the weight will be a million times greater than expected. So in practice this extrinsic cannot be called with this
                     //   arg, so we must skip it here. An example is `RuntimeCall::FellowshipCollective(Call::remove_member {..})`
                     let eww = extrinsic.get_dispatch_info();
-                    if eww.call_weight.ref_time() + eww.extension_weight.ref_time() >= 2 * WEIGHT_REF_TIME_PER_SECOND /*&&
-                        match &extrinsic {
-                            // Whitelist some extrinsics with big weights
-                            RuntimeCall::Configuration(runtime_parachains::configuration::Call::set_hrmp_open_request_ttl { .. }) => false,
-                            RuntimeCall::Hrmp(CallableCallFor::<dancelight_runtime::Hrmp>::force_process_hrmp_close { .. }) => false,
-                            // I guess everything under HRMP is disabled
-                            RuntimeCall::Hrmp(..) => false,
-                            _ => true,
-                        }*/ {
+                    if eww.call_weight.ref_time() + eww.extension_weight.ref_time()
+                        >= 2 * WEIGHT_REF_TIME_PER_SECOND
+                    /*&&
+                    match &extrinsic {
+                        // Whitelist some extrinsics with big weights
+                        RuntimeCall::Configuration(runtime_parachains::configuration::Call::set_hrmp_open_request_ttl { .. }) => false,
+                        RuntimeCall::Hrmp(CallableCallFor::<dancelight_runtime::Hrmp>::force_process_hrmp_close { .. }) => false,
+                        // I guess everything under HRMP is disabled
+                        RuntimeCall::Hrmp(..) => false,
+                        _ => true,
+                    }*/
+                    {
                         //log::error!(target: "fuzz::call", "    call:       {extrinsic:?}");
                         //panic!("Extrinsic would exhaust block weight");
                         continue;
@@ -1080,7 +1094,9 @@ fn fuzz_main(data: &[u8]) {
                                 // Retry using a different origin
                                 let origin = if origin_is_root {
                                     // First we tried as root, now retry as signed origin
-                                    Some(RuntimeOrigin::signed(get_origin(origin_u8.into()).clone()))
+                                    Some(RuntimeOrigin::signed(
+                                        get_origin(origin_u8.into()).clone(),
+                                    ))
                                 } else {
                                     // Retry as root if allowed
                                     if root_can_call(&extrinsic) {
@@ -1137,7 +1153,9 @@ fn fuzz_main(data: &[u8]) {
                 ExtrOrPseudo::Pseudo(fuzz_call) => {
                     match fuzz_call {
                         FuzzRuntimeCall::SetOrigin {
-                            origin: new_origin, retry_as_root, try_root_first
+                            origin: new_origin,
+                            retry_as_root,
+                            try_root_first,
                         } => {
                             origin = new_origin;
                             origin_retry_as_root = retry_as_root;
@@ -1169,7 +1187,12 @@ fn fuzz_main(data: &[u8]) {
         // Assert that it is not possible to mint tokens using the allowed extrinsics
         let final_total_issuance = TotalIssuance::<Runtime>::get();
         // Some extrinsics burn tokens so final issuance can be lower
-        assert!(initial_total_issuance >= final_total_issuance, "{} >= {}", initial_total_issuance, final_total_issuance);
+        assert!(
+            initial_total_issuance >= final_total_issuance,
+            "{} >= {}",
+            initial_total_issuance,
+            final_total_issuance
+        );
     });
 }
 
@@ -1185,14 +1208,13 @@ fn fuzz_init() {
     // Initialize stuff related to metadata (needs externalities)
     use sp_runtime::traits::BlakeTwo256;
 
-    use sp_state_machine::OverlayedChanges;
-    use sp_state_machine::TrieBackendBuilder;
-    use sp_state_machine::Ext;
+    use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
     let mut overlay = OverlayedChanges::default();
     let (storage, root, shared_cache) = &*GENESIS_STORAGE;
     let root = *root;
     let cache = shared_cache.local_cache();
-    let backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+    let backend: TrieBackend<_, BlakeTwo256> =
+        TrieBackendBuilder::new_with_cache(storage, root, cache).build();
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
@@ -1208,7 +1230,8 @@ fn extrinsics_iter(mut extrinsic_data: &[u8]) -> impl Iterator<Item = ExtrOrPseu
 
 struct CursorOutputIgnoreErrors<W>(std::io::Cursor<W>);
 impl<W: std::io::Write> parity_scale_codec::Output for CursorOutputIgnoreErrors<W>
-where std::io::Cursor<W>: std::io::Write,
+where
+    std::io::Cursor<W>: std::io::Write,
 {
     fn write(&mut self, bytes: &[u8]) {
         // Ignore errors
@@ -1246,7 +1269,9 @@ fn fuzz_crossover_extr_or_pseudo(data1: &[u8], data2: &[u8], out: &mut [u8], see
     out_writer.0.position() as usize
 }
 
-libfuzzer_sys::fuzz_crossover!(|data1: &[u8], data2: &[u8], out: &mut [u8], seed: u32| { fuzz_crossover_extr_or_pseudo(data1, data2, out, seed) });
+libfuzzer_sys::fuzz_crossover!(|data1: &[u8], data2: &[u8], out: &mut [u8], seed: u32| {
+    fuzz_crossover_extr_or_pseudo(data1, data2, out, seed)
+});
 
 fn fuzz_mutator_extr_or_pseudo(data: &mut [u8], size: usize, max_size: usize, seed: u32) -> usize {
     let mut data = data;
@@ -1260,7 +1285,11 @@ fn fuzz_mutator_extr_or_pseudo(data: &mut [u8], size: usize, max_size: usize, se
     };
     let fuzz_init_called_before_this = FUZZ_INIT_CALLED.load(std::sync::atomic::Ordering::SeqCst);
     let fuzz_main_called_before_this = FUZZ_MAIN_CALLED.load(std::sync::atomic::Ordering::SeqCst);
-    assert!(fuzz_init_called_before_this && fuzz_main_called_before_this, "{:?}", (fuzz_init_called_before_this, fuzz_main_called_before_this));
+    assert!(
+        fuzz_init_called_before_this && fuzz_main_called_before_this,
+        "{:?}",
+        (fuzz_init_called_before_this, fuzz_main_called_before_this)
+    );
     //mutate_interesting_accounts(&mut data[..new_size]);
     //mutate_interesting_para_ids(&mut data[..new_size]);
 
@@ -1288,11 +1317,8 @@ fn fuzz_mutator_extr_or_pseudo(data: &mut [u8], size: usize, max_size: usize, se
     data.copy_from_slice(&out_writer.0.get_ref());
 
     out_writer.0.position() as usize
-
 }
 
-libfuzzer_sys::fuzz_mutator!(
-    |data: &mut [u8], size: usize, max_size: usize, seed: u32| {
-        fuzz_mutator_extr_or_pseudo(data, size, max_size, seed)
-    }
-);
+libfuzzer_sys::fuzz_mutator!(|data: &mut [u8], size: usize, max_size: usize, seed: u32| {
+    fuzz_mutator_extr_or_pseudo(data, size, max_size, seed)
+});

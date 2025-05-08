@@ -723,7 +723,8 @@ fn fuzz_main(data: &[u8]) {
 
         let validators = dancelight_runtime::Session::validators();
         let slot = Slot::from(u64::from(block));
-        let authority_index = u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
+        let authority_index =
+            u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
         let pre_digest = Digest {
             logs: vec![DigestItem::PreRuntime(
                 BABE_ENGINE_ID,
