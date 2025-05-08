@@ -939,9 +939,10 @@ fn fuzz_main(data: &[u8]) {
     use sp_state_machine::TrieBackendBuilder;
     use sp_state_machine::Ext;
     let mut overlay = OverlayedChanges::default();
-    let (storage, root, _shared_cache) = &*GENESIS_STORAGE;
+    let (storage, root, shared_cache) = &*GENESIS_STORAGE;
     let root = *root;
-    let backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new(storage, root).build();
+    let cache = shared_cache.local_cache();
+    let mut backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new_with_cache(storage, root, cache).build();
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
@@ -1188,9 +1189,10 @@ fn fuzz_init() {
     use sp_state_machine::TrieBackendBuilder;
     use sp_state_machine::Ext;
     let mut overlay = OverlayedChanges::default();
-    let (storage, root, _shared_cache) = &*GENESIS_STORAGE;
+    let (storage, root, shared_cache) = &*GENESIS_STORAGE;
     let root = *root;
-    let backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new(storage, root).build();
+    let cache = shared_cache.local_cache();
+    let backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new_with_cache(storage, root, cache).build();
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
