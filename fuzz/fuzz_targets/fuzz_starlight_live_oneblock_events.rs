@@ -662,8 +662,15 @@ lazy_static::lazy_static! {
     static ref ACCOUNT_ID_TYPE_ID: u32 = {
         find_type_id(&METADATA.types, "AccountId")
     };
+    static ref MULTIADDRESS_TYPE_ID: u32 = {
+        find_type_id(&METADATA.types, "MultiAddress")
+    };
+    static ref PALLET_BALANCES_CALL_TYPE_ID: u32 = {
+        find_type_id(&METADATA.types, "pallet_balances::pallet::Call")
+    };
 
     static ref SEEN_VALUES_FROM_EVENTS: Mutex<SeenValues2> = Mutex::new(SeenValues2::default());
+    static ref VALID_ACCOUNT_IDS_LEN: Mutex<usize> = Mutex::new(0);
 }
 
 
@@ -843,9 +850,21 @@ fn visit_value(val: &scale_value::Value<u32>, seen_values: &mut SeenValues2) {
         let log_str = format!("SEEN AccountId in EVENTS: {:?}", account_id);
 
         if seen_values.account_id.insert(account_id) {
-            log::warn!("{}", log_str);
+            log::info!("{}", log_str);
         }
     }
+    /*
+    if val.context == *MULTIADDRESS_TYPE_ID {
+        let log_str = format!("SEEN MultiAddress in EVENTS: {:?}", val);
+
+        log::warn!("{}", log_str);
+    }
+    if val.context == *PALLET_BALANCES_CALL_TYPE_ID {
+        let log_str = format!("SEEN pallet_balances::Call in EVENTS: {:?}", val);
+
+        log::warn!("{}", log_str);
+    }
+     */
 
     match &val.value {
         ValueDef::Composite(x) => {
@@ -900,6 +919,27 @@ fn visit_events(events: &[&RuntimeEvent], seen_values: &mut SeenValues2) {
 
         visit_value(&new_value, seen_values);
     }
+}
+
+fn visit_runtime_call(event: &RuntimeCall, seen_values: &mut SeenValues2) -> Result<(), ()> {
+    let mut bytes = event.encode();
+    let metadata = &*METADATA;
+    let registry = &metadata.types;
+    let type_id = *RUNTIME_CALL_TYPE_ID;
+    let new_value = match scale_value::scale::decode_as_type(&mut &*bytes, type_id, registry) {
+        Ok(x) => x,
+        Err(e) => {
+            //log::error!("{}", e);
+            return Err(());
+        }
+    };
+
+    //let sss = serde_json::to_string(&new_value).unwrap();
+    //log::info!("JSON EXTR: {:?}", sss);
+
+    visit_value(&new_value, seen_values);
+
+    Ok(())
 }
 
 static EXPORTED_STORAGE: AtomicBool = AtomicBool::new(false);
@@ -1061,6 +1101,7 @@ fn fuzz_main(data: &[u8]) {
         }
         let initial_total_issuance = *INITIAL_TOTAL_ISSUANCE;
         let num_events_before = *NUM_EVENTS_BEFORE;
+        let mut num_events_before_inner = *NUM_EVENTS_BEFORE;
 
         // The snapshot is saved after the initial on_initialize
         //initialize_block(block);
@@ -1126,6 +1167,18 @@ fn fuzz_main(data: &[u8]) {
         let mut origin_retry_as_root = true;
         let mut origin_try_root_first = false;
         let mut origin_retry_as_none = true;
+        let mut valid_account_ids = SeenValues2::default();
+        valid_account_ids.account_id.extend(INTERESTING_ACCOUNTS.iter().cloned());
+
+        {
+            let events_all = starlight_runtime::System::events();
+            let (_, events) = events_all.split_at(num_events_before_inner);
+            let events: Vec<_> = events.iter().map(|ev| {
+                &ev.event
+            }).collect();
+            visit_events(&events, &mut valid_account_ids);
+        }
+
 
         for extrinsic in extrinsics {
             // For testing, only create 1 block, do not even finalize it
@@ -1161,6 +1214,19 @@ fn fuzz_main(data: &[u8]) {
                         //log::error!(target: "fuzz::call", "    call:       {extrinsic:?}");
                         //panic!("Extrinsic would exhaust block weight");
                         continue;
+                    }
+
+                    {
+                        let mut account_ids_in_call = SeenValues2::default();
+                        if visit_runtime_call(&extrinsic, &mut account_ids_in_call).is_err() {
+                            // Failed to check account ids from extrinsic = skip this input to avoid
+                            // invalid account ids
+                            return;
+                        }
+                        if account_ids_in_call.account_id.difference(&valid_account_ids.account_id).count() > 0 {
+                            // Invalid input, abort
+                            return;
+                        }
                     }
 
                     let mut origin_is_root = false;
@@ -1292,6 +1358,15 @@ fn fuzz_main(data: &[u8]) {
                             }
                         }
                     });
+
+                    // Extend valid account ids for next call by looking at events
+                    let events_all = starlight_runtime::System::events();
+                    let (_, events) = events_all.split_at(num_events_before_inner);
+                    let events: Vec<_> = events.iter().map(|ev| {
+                        &ev.event
+                    }).collect();
+                    visit_events(&events, &mut valid_account_ids);
+                    num_events_before_inner = events_all.len();
                 }
                 ExtrOrPseudo::Pseudo(fuzz_call) => {
                     match fuzz_call {
@@ -1332,6 +1407,17 @@ fn fuzz_main(data: &[u8]) {
         let mut events: Vec<_> = events.iter().map(|ev| {
             &ev.event
         }).collect();
+
+        let mut len_mutex = VALID_ACCOUNT_IDS_LEN.lock().unwrap();
+        let prev_len = *len_mutex;
+        if prev_len < valid_account_ids.len() {
+            *len_mutex = valid_account_ids.len();
+            let file = File::create("/tmp/valid_account_ids.json").unwrap();
+            let writer = BufWriter::new(file);
+            serde_json::to_writer_pretty(writer, &valid_account_ids).unwrap();
+        }
+        drop(len_mutex);
+        /*
         let mut seen_events2 = SEEN_VALUES_FROM_EVENTS.lock().unwrap();
         let len_before = seen_events2.len();
         visit_events(&events, &mut *seen_events2);
@@ -1342,6 +1428,7 @@ fn fuzz_main(data: &[u8]) {
             serde_json::to_writer_pretty(writer, &*seen_events2).unwrap();
         }
         drop(seen_events2);
+         */
 
         let mut seen_events = SEEN_EVENTS.lock().unwrap();
         events.retain(|x| {
@@ -1536,9 +1623,11 @@ fn fuzz_mutator_extr_or_pseudo(data: &mut [u8], size: usize, max_size: usize, se
             }
         }
 
-        data.copy_from_slice(&out_writer.0.get_ref());
+        let new_len = out_writer.0.position() as usize;
 
-        out_writer.0.position() as usize
+        data[..new_len].copy_from_slice(&out_writer.0.get_ref()[..new_len]);
+
+        new_len
     } else {
         // Slower mode
         // Decode from 1
