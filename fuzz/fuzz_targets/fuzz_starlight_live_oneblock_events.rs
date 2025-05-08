@@ -1491,6 +1491,7 @@ fn fuzz_init() {
     list_type_ids(&METADATA.types);
 }
 
+// Anything below this line will not be included in the coverage script
 libfuzzer_sys::fuzz_target!(init: fuzz_init(), |data: &[u8]| fuzz_main(data));
 
 fn extrinsics_iter_ignore_errors(mut extrinsic_data: &[u8]) -> impl Iterator<Item = RuntimeCall> + use<'_> {

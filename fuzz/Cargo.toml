@@ -76,6 +76,13 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "fuzz_starlight_live_oneblock_events_coverage"
+path = "fuzz_targets/fuzz_starlight_live_oneblock_events_coverage.rs"
+test = false
+doc = false
+bench = false
+
 [dependencies]
 #dancebox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/dancebox", default-features = false, features = [ "std", "try-runtime", "fast-runtime" ] }
 #flashbox-runtime = { path = "../../tanssi/chains/orchestrator-paras/runtime/flashbox", default-features = false, features = [ "std", "try-runtime", "fast-runtime" ] }
