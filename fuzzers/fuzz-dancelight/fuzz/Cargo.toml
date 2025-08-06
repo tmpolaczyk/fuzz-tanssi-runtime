@@ -1,17 +1,11 @@
 [package]
 name = "fuzz-dancelight-fuzz"
-version = "0.0.0"
-publish = false
 edition = "2024"
+publish = false
+version = "0.0.0"
 
 [package.metadata]
 cargo-fuzz = true
-
-[dependencies]
-libfuzzer-sys = "0.4"
-
-[dependencies.fuzz-dancelight]
-path = ".."
 
 [[bin]]
 name = "fuzz_live_oneblock"
@@ -19,3 +13,9 @@ path = "fuzz_targets/fuzz_live_oneblock.rs"
 test = false
 doc = false
 bench = false
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.fuzz-dancelight]
+path = ".."
