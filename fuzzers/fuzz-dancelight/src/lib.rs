@@ -6,6 +6,7 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
+use dancelight_runtime::Session;
 use itertools::{EitherOrBoth, Itertools};
 use libfuzzer_sys::arbitrary;
 use libfuzzer_sys::arbitrary::{Arbitrary, Unstructured};
@@ -487,6 +488,128 @@ mod create_storage {
     }
 }
 
+mod read_snapshot {
+    use super::*;
+
+    pub fn read_snapshot(
+        chain_spec_json_bytes: &[u8],
+    ) -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
+        use serde::Deserialize;
+        use sp_runtime::BuildStorage;
+
+        #[derive(Deserialize)]
+        struct XXX1 {
+            genesis: XXX2,
+        }
+
+        #[derive(Deserialize)]
+        struct XXX2 {
+            raw: XXX3,
+        }
+
+        #[derive(Deserialize)]
+        struct XXX3 {
+            top: BTreeMap<String, String>,
+        }
+
+        let x: XXX1 = serde_json::from_slice(chain_spec_json_bytes).unwrap();
+        let top = x
+            .genesis
+            .raw
+            .top
+            .into_iter()
+            .map(|(k, v)| {
+                // Need to skip 0x when decoding
+                (hex::decode(&k[2..]).unwrap(), hex::decode(&v[2..]).unwrap())
+            })
+            .collect();
+
+        let t = Storage {
+            top,
+            ..Default::default()
+        };
+
+        let mut endowed_accounts: Vec<AccountId> = (0..4).map(|i| [i; 32].into()).collect();
+        let invulnerables = vec![
+            "Alice".to_string(),
+            "Bob".to_string(),
+            "Charlie".to_string(),
+            "Dave".to_string(),
+        ];
+        let invulnerables = invulnerables_from_seeds(invulnerables.iter());
+        endowed_accounts.extend(invulnerables.iter().map(|x| x.0.clone()));
+        let accounts_with_ed = vec![
+            //dancelight_runtime::StakingAccount::get(),
+            //dancelight_runtime::ParachainBondAccount::get(),
+            //dancelight_runtime::PendingRewardsAccount::get(),
+        ];
+
+        let genesis_balances = endowed_accounts
+            .iter()
+            .cloned()
+            .map(|k| (k, 1 << 60))
+            .chain(accounts_with_ed.iter().cloned().map(|k| {
+                (
+                    k,
+                    dancelight_runtime_constants::currency::EXISTENTIAL_DEPOSIT,
+                )
+            }));
+
+        // Create empty MemoryDB
+        let (mut storage, root): (MemoryDB<BlakeTwo256>, _) = GenericMemoryDB::default_with_root();
+
+        let mut overlay = Default::default();
+        //let cache_provider = trie_cache::CacheProvider::new();
+        let shared_cache = SharedTrieCache::new(CacheSize::new(400_000));
+        let cache = shared_cache.local_cache();
+        let mut backend: TrieBackend<_, BlakeTwo256> =
+            TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+
+        let extensions = None;
+        let mut ext = Ext::new(&mut overlay, &backend, extensions);
+
+        sp_externalities::set_and_run_with_externalities(&mut ext, move || {
+            // Initialize genesis keys
+            for (k, v) in t.top {
+                unhashed::put_raw(&k, &v);
+            }
+
+            // Need to manually update balances because using genesis builder overwrites total issuance
+            for (account, new_balance) in genesis_balances {
+                dancelight_runtime::Balances::force_set_balance(
+                    RuntimeOrigin::root(),
+                    account.into(),
+                    new_balance,
+                )
+                .unwrap();
+            }
+        });
+
+        drop(ext);
+
+        create_storage(overlay, backend, root, shared_cache)
+    }
+}
+
+fn genesis_storage_from_snapshot() -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
+    const EXPORTED_STATE_CHAIN_SPEC_JSON: &[u8] =
+        include_bytes!("../../../snapshots/starlight-2025-08-05.json");
+
+    read_snapshot::read_snapshot(EXPORTED_STATE_CHAIN_SPEC_JSON)
+}
+
+// Creating a genesis state from scratch is hard so we just use the raw specs from zombienet as a
+// "local" network.
+fn genesis_storage_from_zombienet() -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
+    const ZOMBIENET_STATE_CHAIN_SPEC_JSON: &[u8] = include_bytes!(
+        "../../../snapshots/zombienet-dancelight-ed2538bb631060008e140a9a9308712073b57897.json"
+    );
+
+    read_snapshot::read_snapshot(ZOMBIENET_STATE_CHAIN_SPEC_JSON)
+}
+
+const USE_LIVE_SNAPSHOT: bool = false;
+
 lazy_static::lazy_static! {
     static ref ALICE: AccountId = INTERESTING_ACCOUNTS[4].clone();
     static ref VALID_ORIGINS: Vec<AccountId> = {
@@ -525,90 +648,11 @@ lazy_static::lazy_static! {
     };
 
     static ref GENESIS_STORAGE: (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) = {
-        use serde::Deserialize;
-        use sp_runtime::BuildStorage;
-
-        const EXPORTED_STATE_CHAIN_SPEC_JSON: &[u8] = include_bytes!("../../../snapshots/starlight-2025-08-05.json");
-
-        #[derive(Deserialize)]
-        struct XXX1 {
-            genesis: XXX2,
+        if USE_LIVE_SNAPSHOT {
+            genesis_storage_from_snapshot()
+        } else {
+            genesis_storage_from_zombienet()
         }
-
-        #[derive(Deserialize)]
-        struct XXX2 {
-            raw: XXX3,
-        }
-
-        #[derive(Deserialize)]
-        struct XXX3 {
-            top: BTreeMap<String, String>,
-        }
-
-        let x: XXX1 = serde_json::from_slice(EXPORTED_STATE_CHAIN_SPEC_JSON).unwrap();
-        let top = x.genesis.raw.top.into_iter().map(|(k, v)| {
-            // Need to skip 0x when decoding
-            (hex::decode(&k[2..]).unwrap(), hex::decode(&v[2..]).unwrap())
-        }).collect();
-
-        let t = Storage {
-            top,
-            ..Default::default()
-        };
-
-        let mut endowed_accounts: Vec<AccountId> = (0..4).map(|i| [i; 32].into()).collect();
-        let invulnerables = vec![
-            "Alice".to_string(),
-            "Bob".to_string(),
-            "Charlie".to_string(),
-            "Dave".to_string(),
-        ];
-        let invulnerables = invulnerables_from_seeds(invulnerables.iter());
-        endowed_accounts.extend(invulnerables.iter().map(|x| x.0.clone()));
-        let accounts_with_ed = vec![
-            //dancelight_runtime::StakingAccount::get(),
-            //dancelight_runtime::ParachainBondAccount::get(),
-            //dancelight_runtime::PendingRewardsAccount::get(),
-        ];
-
-        let genesis_balances = endowed_accounts
-            .iter()
-            .cloned()
-            .map(|k| (k, 1 << 60))
-            .chain(
-                accounts_with_ed
-                    .iter()
-                    .cloned()
-                    .map(|k| (k, dancelight_runtime_constants::currency::EXISTENTIAL_DEPOSIT))
-            );
-
-        // Create empty MemoryDB
-        let (mut storage, root): (MemoryDB<BlakeTwo256>, _) = GenericMemoryDB::default_with_root();
-
-        let mut overlay = Default::default();
-        //let cache_provider = trie_cache::CacheProvider::new();
-        let shared_cache = SharedTrieCache::new(CacheSize::new(400_000));
-        let cache = shared_cache.local_cache();
-        let mut backend: TrieBackend<_, BlakeTwo256> = TrieBackendBuilder::new_with_cache(storage, root, cache).build();
-
-        let extensions = None;
-        let mut ext = Ext::new(&mut overlay, &backend, extensions);
-
-        sp_externalities::set_and_run_with_externalities(&mut ext, move || {
-            // Initialize genesis keys
-            for (k, v) in t.top {
-                unhashed::put_raw(&k, &v);
-            }
-
-            // Need to manually update balances because using genesis builder overwrites total issuance
-            for (account, new_balance) in genesis_balances {
-                dancelight_runtime::Balances::force_set_balance(RuntimeOrigin::root(), account.into(), new_balance).unwrap();
-            }
-        });
-
-        drop(ext);
-
-        create_storage(overlay, backend, root, shared_cache)
     };
 
     static ref METADATA: RuntimeMetadataV15 = {
@@ -689,6 +733,10 @@ enum FuzzRuntimeCall {
     CallRuntimeApi(Vec<u8>),
     // Unused
     RecvEthMsg(Vec<u8>),
+    // New block
+    NewBlock,
+    // Fast forward to next session
+    NewSession,
 }
 
 #[derive(Debug, Encode, Decode, TypeInfo, Clone)]
@@ -851,7 +899,7 @@ static EXPORTED_STORAGE: AtomicBool = AtomicBool::new(false);
 static FUZZ_MAIN_CALLED: AtomicBool = AtomicBool::new(false);
 static FUZZ_INIT_CALLED: AtomicBool = AtomicBool::new(false);
 
-pub fn fuzz_main(data: &[u8]) {
+pub fn fuzz_live_oneblock(data: &[u8]) {
     FUZZ_MAIN_CALLED.store(true, std::sync::atomic::Ordering::SeqCst);
     //println!("data: {:?}", data);
     let mut extrinsic_data = data;
@@ -1248,6 +1296,14 @@ pub fn fuzz_main(data: &[u8]) {
                             // Unimplemented
                             continue;
                         }
+                        FuzzRuntimeCall::NewBlock => {
+                            // Unimplemented
+                            continue;
+                        }
+                        FuzzRuntimeCall::NewSession => {
+                            // Unimplemented
+                            continue;
+                        }
                     }
                 }
             }
@@ -1263,6 +1319,383 @@ pub fn fuzz_main(data: &[u8]) {
         // Some extrinsics burn tokens so final issuance can be lower
         assert!(
             initial_total_issuance >= final_total_issuance,
+            "{} >= {}",
+            initial_total_issuance,
+            final_total_issuance
+        );
+    });
+}
+
+pub fn fuzz_zombie(data: &[u8]) {
+    FUZZ_MAIN_CALLED.store(true, std::sync::atomic::Ordering::SeqCst);
+    //println!("data: {:?}", data);
+    let mut extrinsic_data = data;
+    //#[allow(deprecated)]
+    let mut extrinsics: Vec<ExtrOrPseudo> =
+        iter::from_fn(|| DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
+            .filter(|x| match x {
+                ExtrOrPseudo::Extr(x) => !recursively_find_call(x.clone(), |call| {
+                    // We filter out calls with Fungible(0) as they cause a debug crash
+                    /*
+                     matches!(call.clone(), RuntimeCall::XcmPallet(pallet_xcm::Call::execute { message, .. })
+                         if matches!(message.as_ref(), staging_xcm::VersionedXcm::V2(staging_xcm::v2::Xcm(msg))
+                             if msg.iter().any(|m| matches!(m, staging_xcm::opaque::v2::prelude::BuyExecution { fees: staging_xcm::v2::MultiAsset { fun, .. }, .. }
+                                 if fun == &staging_xcm::v2::Fungibility::Fungible(0)
+                             )
+                         )) || matches!(message.as_ref(), staging_xcm::VersionedXcm::V3(staging_xcm::v3::Xcm(msg))
+                             if msg.iter().any(|m| matches!(m, staging_xcm::opaque::v3::prelude::BuyExecution { weight_limit: staging_xcm::opaque::v3::WeightLimit::Limited(weight), .. }
+                                 if weight.ref_time() <= 1
+                             ))
+                         )
+                     )
+                     || matches!(call.clone(), RuntimeCall::XcmPallet(pallet_xcm::Call::transfer_assets_using_type_and_then { assets, ..})
+                         if staging_xcm::v2::MultiAssets::try_from(*assets.clone())
+                             .map(|assets| assets.inner().iter().any(|a| matches!(a, staging_xcm::v2::MultiAsset { fun, .. }
+                                 if fun == &staging_xcm::v2::Fungibility::Fungible(0)
+                             ))).unwrap_or(false)
+                     )
+                    */
+                    matches!(call.clone(), RuntimeCall::System(_))
+                        || matches!(
+                    &call,
+                    RuntimeCall::Referenda(CallableCallFor::<dancelight_runtime::Referenda>::submit {
+                        proposal_origin: matching_origin,
+                        ..
+                    }) if RuntimeOrigin::from(*matching_origin.clone()).caller() == RuntimeOrigin::root().caller()
+                )
+                }),
+                ExtrOrPseudo::Pseudo(x) => true,
+            })
+            .collect();
+
+    if extrinsics.is_empty() {
+        return;
+    }
+
+    //println!("{:?}", extrinsics);
+
+    let mut block: u32 = 1;
+    let mut weight: Weight = Weight::zero();
+    let mut elapsed: Duration = Duration::ZERO;
+    let mut block_rewards: Cell<u128> = Cell::new(0);
+    let mut last_era: Cell<u32> = Cell::new(0);
+
+    let initialize_block = |block: u32| {
+        log::debug!(target: "fuzz::initialize", "\ninitializing block {block}");
+
+        let validators = dancelight_runtime::Session::validators();
+        let slot = Slot::from(u64::from(block));
+        let authority_index =
+            u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
+        let pre_digest = Digest {
+            logs: vec![DigestItem::PreRuntime(
+                BABE_ENGINE_ID,
+                PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
+                    slot,
+                    authority_index,
+                })
+                .encode(),
+            )],
+        };
+
+        let grandparent_header = Header::new(
+            block,
+            H256::default(),
+            H256::default(),
+            <frame_system::Pallet<Runtime>>::parent_hash(),
+            pre_digest.clone(),
+        );
+
+        let parent_header = Header::new(
+            block,
+            H256::default(),
+            H256::default(),
+            grandparent_header.hash(),
+            pre_digest,
+        );
+
+        // Calculate max expected supply increase
+        {
+            let registered_para_ids = ContainerRegistrar::registered_para_ids();
+            if !registered_para_ids.is_empty() {
+                let new_supply_inflation_rewards =
+                    CollatorsInflationRatePerBlock::get() * Balances::total_issuance();
+                block_rewards.set(block_rewards.get() + new_supply_inflation_rewards);
+            }
+
+            if last_era.get() == 0 {
+                let era_index = ExternalValidators::current_era().unwrap();
+                last_era.set(era_index);
+            }
+            let era_index = ExternalValidators::current_era().unwrap();
+            let mut new_era = false;
+            if era_index > last_era.get() {
+                new_era = true;
+            }
+            if new_era {
+                let new_supply_validators =
+                    ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
+                block_rewards.set(block_rewards.get() + new_supply_validators);
+            }
+        }
+
+        Executive::initialize_block(&parent_header);
+
+        Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION).unwrap();
+
+        Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
+            CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data {
+                data: (),
+            },
+        )))
+        .unwrap()
+        .unwrap();
+
+        ParaInherent::enter(
+            RuntimeOrigin::none(),
+            primitives::vstaging::InherentData {
+                parent_header: grandparent_header,
+                backed_candidates: Vec::default(),
+                bitfields: Vec::default(),
+                disputes: Vec::default(),
+            },
+        )
+        .unwrap();
+    };
+
+    let finalize_block = |elapsed: Duration| {
+        log::debug!(target: "fuzz::time", "\n  time spent: {elapsed:?}");
+        assert!(elapsed.as_secs() <= 2, "block execution took too much time");
+
+        log::debug!(target: "fuzz::finalize", "  finalizing block");
+        Executive::finalize_block();
+    };
+
+    use sp_runtime::traits::BlakeTwo256;
+
+    use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
+    let mut overlay = OverlayedChanges::default();
+    let (storage, root, shared_cache) = &*GENESIS_STORAGE;
+    let root = *root;
+    let cache = shared_cache.local_cache();
+    let mut backend: TrieBackend<_, BlakeTwo256> =
+        TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+    let extensions = None;
+    let mut ext = Ext::new(&mut overlay, &backend, extensions);
+    sp_externalities::set_and_run_with_externalities(&mut ext, || {
+        let initial_total_issuance = TotalIssuance::<Runtime>::get();
+
+        initialize_block(block);
+
+        // Origin is kind of like a state machine
+        // By default we try using Alice, and if we get Err::BadOrigin, we check if root_can_call
+        // that extrinsic, and if so retry as root
+        let mut origin = 0;
+        let mut origin_retry_as_root = true;
+        let mut origin_try_root_first = false;
+
+        //let mut seen_values = SeenValues::default();
+        //test_mutate(&mut extrinsics, &mut seen_values);
+
+        for extrinsic in extrinsics {
+            // Only create 1 block, do not even finalize it
+            match extrinsic {
+                ExtrOrPseudo::Extr(extrinsic) => {
+                    /*
+                    weight.saturating_accrue(extrinsic.get_dispatch_info().call_weight);
+                    weight.saturating_accrue(extrinsic.get_dispatch_info().extension_weight);
+                    if weight.ref_time() >= 2 * WEIGHT_REF_TIME_PER_SECOND {
+                        log::warn!("Extrinsic would exhaust block weight, skipping");
+                        continue;
+                    }
+                     */
+                    // Ignore weight because we will be executing all extrinsics in the same block.
+                    // But detect expensive extrinsics that take the whole block.
+                    // I tried to panic but there are many edge cases here:
+                    // * Disabled extrinsics return a big weight, not u64::MAX, but some random big number different for each extrinsic.
+                    //   Examples: set_hrmp_open_request_ttl, force_process_hrmp_close
+                    // * Parametric weights can easily overflow. For example, if the weight depends on some param n, and we set n = 1_000_000,
+                    //   then the weight will be a million times greater than expected. So in practice this extrinsic cannot be called with this
+                    //   arg, so we must skip it here. An example is `RuntimeCall::FellowshipCollective(Call::remove_member {..})`
+                    let eww = extrinsic.get_dispatch_info();
+                    if eww.call_weight.ref_time() + eww.extension_weight.ref_time()
+                        >= 2 * WEIGHT_REF_TIME_PER_SECOND
+                    /*&&
+                    match &extrinsic {
+                        // Whitelist some extrinsics with big weights
+                        RuntimeCall::Configuration(runtime_parachains::configuration::Call::set_hrmp_open_request_ttl { .. }) => false,
+                        RuntimeCall::Hrmp(CallableCallFor::<dancelight_runtime::Hrmp>::force_process_hrmp_close { .. }) => false,
+                        // I guess everything under HRMP is disabled
+                        RuntimeCall::Hrmp(..) => false,
+                        _ => true,
+                    }*/
+                    {
+                        //log::error!(target: "fuzz::call", "    call:       {extrinsic:?}");
+                        //panic!("Extrinsic would exhaust block weight");
+                        continue;
+                    }
+
+                    let mut origin_is_root = false;
+                    let origin_u8 = origin;
+                    let origin = if origin == 0 {
+                        // Check if this extrinsic can be called by root, if not return a Signed origin
+                        if origin_try_root_first && root_can_call(&extrinsic) {
+                            origin_is_root = true;
+
+                            RuntimeOrigin::root()
+                        } else {
+                            RuntimeOrigin::signed(get_origin(origin.into()).clone())
+                        }
+                    } else {
+                        RuntimeOrigin::signed(get_origin(origin.into()).clone())
+                    };
+
+                    log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
+                    log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
+
+                    let now = Instant::now(); // We get the current time for timing purposes.
+                    #[allow(unused_variables)]
+                    let mut res = extrinsic.clone().dispatch(origin.clone());
+                    elapsed += now.elapsed();
+
+                    if origin_retry_as_root {
+                        if let Err(e) = &res {
+                            if let DispatchError::BadOrigin = &e.error {
+                                // Retry using a different origin
+                                let origin = if origin_is_root {
+                                    // First we tried as root, now retry as signed origin
+                                    Some(RuntimeOrigin::signed(
+                                        get_origin(origin_u8.into()).clone(),
+                                    ))
+                                } else {
+                                    // Retry as root if allowed
+                                    if root_can_call(&extrinsic) {
+                                        Some(RuntimeOrigin::root())
+                                    } else {
+                                        // If not allowed, do not retry
+                                        None
+                                    }
+                                };
+                                if let Some(origin) = origin {
+                                    log::debug!(target: "fuzz::result", "    result:     {}", match &res {
+                                        Ok(x) => {
+                                            if let Some(w) = x.actual_weight {
+                                                format!("Ok {{ actual_weight: {:?} }}", w)
+                                            } else {
+                                                format!("Ok {{ }}")
+                                            }
+                                        }
+                                        Err(e) => {
+                                            if let Some(w) = e.post_info.actual_weight {
+                                                format!("Err {{ error: {:?}, actual_weight: {:?} }}", e.error, w)
+                                            } else {
+                                                format!("Err {{ error: {:?} }}", e.error)
+                                            }
+                                        }
+                                    });
+
+                                    log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
+                                    log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
+
+                                    res = extrinsic.clone().dispatch(origin);
+                                }
+                            }
+                        }
+                    }
+
+                    log::debug!(target: "fuzz::result", "    result:     {}", match &res {
+                        Ok(x) => {
+                            if let Some(w) = x.actual_weight {
+                                format!("Ok {{ actual_weight: {:?} }}", w)
+                            } else {
+                                format!("Ok {{ }}")
+                            }
+                        }
+                        Err(e) => {
+                            if let Some(w) = e.post_info.actual_weight {
+                                format!("Err {{ error: {:?}, actual_weight: {:?} }}", e.error, w)
+                            } else {
+                                format!("Err {{ error: {:?} }}", e.error)
+                            }
+                        }
+                    });
+                }
+                ExtrOrPseudo::Pseudo(fuzz_call) => {
+                    match fuzz_call {
+                        FuzzRuntimeCall::SetOrigin {
+                            origin: new_origin,
+                            retry_as_root,
+                            try_root_first,
+                        } => {
+                            origin = new_origin;
+                            origin_retry_as_root = retry_as_root;
+                            origin_try_root_first = try_root_first;
+                        }
+                        // Set relay data and start a new block
+                        FuzzRuntimeCall::SetRelayData(x) => {
+                            // Disabled
+                            continue;
+                        }
+                        FuzzRuntimeCall::CallRuntimeApi(x) => {
+                            // Disabled because anything related to block building will panic
+                            continue;
+                        }
+                        FuzzRuntimeCall::RecvEthMsg(x) => {
+                            // Unimplemented
+                            continue;
+                        }
+                        FuzzRuntimeCall::NewBlock => {
+                            finalize_block(elapsed);
+
+                            block += 1;
+                            weight = 0.into();
+                            elapsed = Duration::ZERO;
+
+                            initialize_block(block);
+                            continue;
+                        }
+                        FuzzRuntimeCall::NewSession => {
+                            // TODO: since sessions are timestamp based in relay chain, we can just
+                            // mock the timestamp and create one block only
+                            // But no idea how to do that :(
+
+                            let session_start = Session::current_index();
+                            let mut count = 0u32;
+                            loop {
+                                count += 1;
+                                finalize_block(elapsed);
+
+                                block += 1;
+                                weight = 0.into();
+                                elapsed = Duration::ZERO;
+
+                                initialize_block(block);
+
+                                let new_session = Session::current_index();
+
+                                if new_session > session_start {
+                                    break;
+                                }
+                            }
+                            log::info!("NewSession: created {} blocks", count);
+
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        finalize_block(elapsed);
+        // Disabled this to improve performance
+        /*
+        check_invariants(block, initial_total_issuance, block_rewards.get());
+         */
+        // Assert that it is not possible to mint tokens using the allowed extrinsics
+        let final_total_issuance = TotalIssuance::<Runtime>::get();
+        // Some extrinsics burn tokens so final issuance can be lower
+        assert!(
+            initial_total_issuance.saturating_add(block_rewards.get()) >= final_total_issuance,
             "{} >= {}",
             initial_total_issuance,
             final_total_issuance

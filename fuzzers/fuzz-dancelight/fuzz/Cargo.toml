@@ -13,6 +13,12 @@ path = "fuzz_targets/fuzz_live_oneblock.rs"
 test = false
 doc = false
 bench = false
+[[bin]]
+name = "fuzz_zombie"
+path = "fuzz_targets/fuzz_zombie.rs"
+test = false
+doc = false
+bench = false
 
 [dependencies]
 libfuzzer-sys = "0.4"
