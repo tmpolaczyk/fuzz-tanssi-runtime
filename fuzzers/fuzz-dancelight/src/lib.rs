@@ -7,58 +7,58 @@
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
 use itertools::{EitherOrBoth, Itertools};
-use libfuzzer_sys::arbitrary::{Arbitrary, Unstructured};
 use libfuzzer_sys::arbitrary;
+use libfuzzer_sys::arbitrary::{Arbitrary, Unstructured};
 use {
     cumulus_primitives_core::ParaId,
+    dancelight_runtime::{
+        AccountId, AllPalletsWithSystem, Balance, Balances, CollatorsInflationRatePerBlock,
+        ContainerRegistrar, Executive, ExternalValidators, Header, InflationRewards,
+        MultiBlockMigrations, OriginCaller, ParaInherent, Runtime, RuntimeCall, RuntimeOrigin,
+        Timestamp, UncheckedExtrinsic, ValidatorsInflationRatePerEra,
+        genesis_config_presets::get_authority_keys_from_seed,
+    },
+    dancelight_runtime_constants::time::SLOT_DURATION,
     dp_container_chain_genesis_data::ContainerChainGenesisData,
     dp_core::well_known_keys::PARAS_HEADS_INDEX,
-    frame_metadata::{v15::RuntimeMetadataV15, RuntimeMetadata, RuntimeMetadataPrefixed},
+    frame_metadata::{RuntimeMetadata, RuntimeMetadataPrefixed, v15::RuntimeMetadataV15},
     frame_support::{
+        Hashable,
         dispatch::{CallableCallFor as CallableCallForG, GetDispatchInfo},
         pallet_prelude::Weight,
         storage::unhashed,
         traits::{Currency, IntegrityTest, OriginTrait, TryState, TryStateSelect},
         weights::constants::WEIGHT_REF_TIME_PER_SECOND,
-        Hashable,
     },
     frame_system::Account,
-    nimbus_primitives::{NimbusId, NIMBUS_ENGINE_ID},
+    nimbus_primitives::{NIMBUS_ENGINE_ID, NimbusId},
     pallet_balances::{Holds, TotalIssuance},
     pallet_configuration::HostConfiguration,
     parity_scale_codec::{DecodeLimit, Encode},
     polkadot_core_primitives::{BlockNumber, Signature},
     primitives::{SchedulerParams, ValidationCode},
-    rand::{seq::IndexedRandom, Rng, SeedableRng},
+    rand::{Rng, SeedableRng, seq::IndexedRandom},
     scale_info::{PortableRegistry, TypeInfo},
     scale_value::{Composite, ValueDef},
-    sp_consensus_aura::{Slot, AURA_ENGINE_ID},
+    sp_consensus_aura::{AURA_ENGINE_ID, Slot},
     sp_consensus_babe::{
-        digests::{PreDigest, SecondaryPlainPreDigest},
         BABE_ENGINE_ID,
+        digests::{PreDigest, SecondaryPlainPreDigest},
     },
-    sp_core::{sr25519, Decode, Get, Pair, Public, H256},
+    sp_core::{Decode, Get, H256, Pair, Public, sr25519},
     sp_inherents::InherentDataProvider,
     sp_runtime::{
-        traits::{BlakeTwo256, Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
         Digest, DigestItem, DispatchError, Perbill, Saturating, Storage,
+        traits::{BlakeTwo256, Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
     },
     sp_state_machine::{
         BasicExternalities, Ext, LayoutV1, MemoryDB, TrieBackend, TrieBackendBuilder,
     },
     sp_storage::StateVersion,
     sp_trie::{
-        cache::{CacheSize, SharedTrieCache},
         GenericMemoryDB,
+        cache::{CacheSize, SharedTrieCache},
     },
-    dancelight_runtime::{
-        genesis_config_presets::get_authority_keys_from_seed, AccountId, AllPalletsWithSystem,
-        Balance, Balances, CollatorsInflationRatePerBlock, ContainerRegistrar, Executive,
-        ExternalValidators, Header, InflationRewards, MultiBlockMigrations, OriginCaller,
-        ParaInherent, Runtime, RuntimeCall, RuntimeOrigin, Timestamp, UncheckedExtrinsic,
-        ValidatorsInflationRatePerEra,
-    },
-    dancelight_runtime_constants::time::SLOT_DURATION,
     std::{
         any::TypeId,
         cell::Cell,
@@ -67,7 +67,7 @@ use {
         io::Write,
         iter,
         marker::PhantomData,
-        sync::{atomic::AtomicBool, Arc},
+        sync::{Arc, atomic::AtomicBool},
         time::{Duration, Instant},
     },
 };
@@ -86,11 +86,16 @@ fn recursively_find_call(call: RuntimeCall, matches_on: fn(RuntimeCall) -> bool)
                 return true;
             }
         }
-    } else if let RuntimeCall::Multisig(CallableCallFor::<dancelight_runtime::Multisig>::as_multi_threshold_1 {
-        call, ..
-    })
-    | RuntimeCall::Utility(CallableCallFor::<dancelight_runtime::Utility>::as_derivative { call, .. })
-    | RuntimeCall::Proxy(CallableCallFor::<dancelight_runtime::Proxy>::proxy { call, .. }) = call
+    } else if let RuntimeCall::Multisig(
+        CallableCallFor::<dancelight_runtime::Multisig>::as_multi_threshold_1 { call, .. },
+    )
+    | RuntimeCall::Utility(
+        CallableCallFor::<dancelight_runtime::Utility>::as_derivative { call, .. },
+    )
+    | RuntimeCall::Proxy(CallableCallFor::<dancelight_runtime::Proxy>::proxy {
+        call,
+        ..
+    }) = call
     {
         return recursively_find_call(*call.clone(), matches_on);
     } else if matches_on(call) {
@@ -178,10 +183,9 @@ pub fn get_from_seed<TPublic: Public + 'static>(seed: &str) -> <TPublic::Pair as
     // When compiled with `--cfg fuzzing`, this doesn't work because of an invalid bip39 checksum error
     // caused by the `bitcoin_hashes` library, which mocks sha256 when fuzzing.
     // To avoid this problem, generate the public key some other way and add it to the account list above.
-    if let Some(hex_key) =
-        ACCOUNT_FROM_SEED
-            .iter()
-            .find_map(|(k, v)| if *k == seed { Some(v) } else { None })
+    if let Some(hex_key) = ACCOUNT_FROM_SEED
+        .iter()
+        .find_map(|(k, v)| if *k == seed { Some(v) } else { None })
     {
         let mut x: <TPublic::Pair as Pair>::Public =
             if TypeId::of::<TPublic>() == TypeId::of::<sr25519::Public>() {
@@ -203,8 +207,12 @@ pub fn get_from_seed<TPublic: Public + 'static>(seed: &str) -> <TPublic::Pair as
 pub fn mock_container_chain_genesis_data(para_id: ParaId) -> ContainerChainGenesisData {
     ContainerChainGenesisData {
         storage: vec![].try_into().unwrap(),
-        name: Vec::<u8>::from(format!("Container Chain {}", para_id)).try_into().unwrap(),
-        id: Vec::<u8>::from(format!("container-chain-{}", para_id)).try_into().unwrap(),
+        name: Vec::<u8>::from(format!("Container Chain {}", para_id))
+            .try_into()
+            .unwrap(),
+        id: Vec::<u8>::from(format!("container-chain-{}", para_id))
+            .try_into()
+            .unwrap(),
         fork_id: None,
         extensions: vec![].try_into().unwrap(),
         properties: Default::default(),
@@ -264,10 +272,10 @@ pub fn invulnerables_from_seeds<S: AsRef<str>, I: Iterator<Item = S>>(
         .collect()
 }
 
-fn default_parachains_host_configuration(
-) -> runtime_parachains::configuration::HostConfiguration<primitives::BlockNumber> {
+fn default_parachains_host_configuration()
+-> runtime_parachains::configuration::HostConfiguration<primitives::BlockNumber> {
     use primitives::{
-        node_features::FeatureIndex, AsyncBackingParams, MAX_CODE_SIZE, MAX_POV_SIZE,
+        AsyncBackingParams, MAX_CODE_SIZE, MAX_POV_SIZE, node_features::FeatureIndex,
     };
 
     runtime_parachains::configuration::HostConfiguration {
@@ -548,7 +556,6 @@ lazy_static::lazy_static! {
             ..Default::default()
         };
 
-
         let mut endowed_accounts: Vec<AccountId> = (0..4).map(|i| [i; 32].into()).collect();
         let invulnerables = vec![
             "Alice".to_string(),
@@ -693,8 +700,8 @@ enum ExtrOrPseudo {
 // Attempt to panic on this error log
 /*
 2025-08-05 11:39:45 Post dispatch weight is greater than pre dispatch weight. Pre dispatch weight may underestimating the actual weight. Greater post dispatch weight components are ignored.
-					Pre dispatch weight: Weight { ref_time: 3097114602, proof_size: 276453 },
-					Post dispatch weight: Weight { ref_time: 3099021404, proof_size: 276453 }
+                    Pre dispatch weight: Weight { ref_time: 3097114602, proof_size: 276453 },
+                    Post dispatch weight: Weight { ref_time: 3099021404, proof_size: 276453 }
 */
 use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
 
@@ -966,7 +973,9 @@ pub fn fuzz_main(data: &[u8]) {
         .unwrap();
 
         Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
-            CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data { data: () },
+            CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data {
+                data: (),
+            },
         )))
         .unwrap()
         .unwrap();
@@ -1290,15 +1299,17 @@ pub fn fuzz_init() {
 fn extrinsics_iter_ignore_errors(
     mut extrinsic_data: &[u8],
 ) -> impl Iterator<Item = RuntimeCall> + use<'_> {
-    iter::from_fn(move || loop {
-        match DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data) {
-            Ok(x) => return Some(x),
-            Err(_e) => {
-                if extrinsic_data.is_empty() {
-                    return None;
-                } else {
-                    extrinsic_data = &extrinsic_data[1..];
-                    continue;
+    iter::from_fn(move || {
+        loop {
+            match DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data) {
+                Ok(x) => return Some(x),
+                Err(_e) => {
+                    if extrinsic_data.is_empty() {
+                        return None;
+                    } else {
+                        extrinsic_data = &extrinsic_data[1..];
+                        continue;
+                    }
                 }
             }
         }
@@ -1320,7 +1331,12 @@ where
     }
 }
 
-pub fn fuzz_crossover_extr_or_pseudo(data1: &[u8], data2: &[u8], out: &mut [u8], seed: u32) -> usize {
+pub fn fuzz_crossover_extr_or_pseudo(
+    data1: &[u8],
+    data2: &[u8],
+    out: &mut [u8],
+    seed: u32,
+) -> usize {
     // Decode from 1
     let extr1 = extrinsics_iter(data1);
     // Decode from 2
@@ -1376,7 +1392,12 @@ pub fn fuzz_crossover_extr_or_pseudo(data1: &[u8], data2: &[u8], out: &mut [u8],
     out_writer.0.position() as usize
 }
 
-pub fn fuzz_mutator_extr_or_pseudo(data: &mut [u8], size: usize, max_size: usize, seed: u32) -> usize {
+pub fn fuzz_mutator_extr_or_pseudo(
+    data: &mut [u8],
+    size: usize,
+    max_size: usize,
+    seed: u32,
+) -> usize {
     let mut data = data;
     let cap = data.len();
     let rng = &mut rand::rngs::SmallRng::seed_from_u64(u64::from(seed));
@@ -1517,4 +1538,3 @@ pub fn fuzz_mutator_extr_or_pseudo(data: &mut [u8], size: usize, max_size: usize
         new_len
     }
 }
-
