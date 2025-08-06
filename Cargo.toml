@@ -1,0 +1,22 @@
+[workspace]
+# default-members is the subset of members that is compiled when running cargo build.
+# some binaries are intentionally left out of this list because we don't want to compile them every time.
+# Basically exclude fuzz targets from here to avoid building them
+default-members = [
+    "fuzzers/*",
+]
+members = [
+    "fuzzers/*",
+]
+
+resolver = "2"
+
+[workspace.lints]
+
+[workspace.package]
+authors = [ "Tomasz Polaczyk" ]
+repository = "https://github.com/tmpolaczyk/fuzz-tanssi-runtime"
+
+[workspace.dependencies]
+dancelight-runtime = { path = "../tanssi/chains/orchestrator-relays/runtime/dancelight", default-features = false }
+starlight-runtime = { path = "../tanssi/chains/orchestrator-relays/runtime/starlight", default-features = false }
