@@ -1,5 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use fuzz_dancelight::{extrinsics_iter, ExtrOrPseudo};
+use scale_info::TypeInfo;
 
 /// CLI for fuzz-dancelight
 #[derive(Parser)]
@@ -31,6 +33,12 @@ enum Commands {
         #[arg(long)]
         output_hexsnapshot_path: String,
     },
+
+    /// Decode a corpus input
+    DecodeInput {
+        #[arg(long)]
+        input_path: String,
+    }
 }
 
 fn main() -> Result<()> {
@@ -55,6 +63,17 @@ fn main() -> Result<()> {
                 &input_snapshot_path,
                 &output_hexsnapshot_path,
             );
+            Ok(())
+        }
+        Commands::DecodeInput {
+            input_path
+        } => {
+            let input_bytes = std::fs::read(&input_path)?;
+            let extr: Vec<_> = extrinsics_iter(&input_bytes).collect();
+            //println!("{:?}", extr);
+            for x in extr {
+                println!("{:?}", x);
+            }
             Ok(())
         }
     }

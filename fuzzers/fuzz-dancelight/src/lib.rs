@@ -708,7 +708,7 @@ fn find_type_id(registry: &PortableRegistry, path_contains: &str) -> u32 {
 }
 
 #[derive(Debug, Encode, Decode, TypeInfo, Clone)]
-enum FuzzRuntimeCall {
+pub enum FuzzRuntimeCall {
     SetOrigin {
         // Default: 0 (signed origin)
         origin: u8,
@@ -730,7 +730,7 @@ enum FuzzRuntimeCall {
 }
 
 #[derive(Debug, Encode, Decode, TypeInfo, Clone)]
-enum ExtrOrPseudo {
+pub enum ExtrOrPseudo {
     Extr(RuntimeCall),
     Pseudo(FuzzRuntimeCall),
 }
@@ -1969,7 +1969,7 @@ fn extrinsics_iter_ignore_errors(
     })
 }
 
-fn extrinsics_iter(mut extrinsic_data: &[u8]) -> impl Iterator<Item = ExtrOrPseudo> + use<'_> {
+pub fn extrinsics_iter(mut extrinsic_data: &[u8]) -> impl Iterator<Item = ExtrOrPseudo> + use<'_> {
     iter::from_fn(move || DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
 }
 
