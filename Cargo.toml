@@ -73,6 +73,10 @@ serde = { version = "1.0.197", default-features = false }
 serde_json = { version = "1", default-features = false }
 trie-db = { version = "0.30" }
 
+# cli dependencies
+clap = { version = "4.5.42" }
+anyhow = "1.0.98"
+
 [workspace.lints.clippy]
 # Deny main lint groups
 complexity = { level = "deny", priority = 1 }

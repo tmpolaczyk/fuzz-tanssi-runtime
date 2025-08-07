@@ -7,6 +7,8 @@ version = "0.1.0"
 
 [dependencies]
 fuzz-dancelight = { workspace = true }
+clap = {workspace = true, features = ["derive"]}
+anyhow = {workspace = true}
 
 [lints]
 workspace = true

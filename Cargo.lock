@@ -3557,6 +3557,8 @@ dependencies = [
 name = "fuzz-dancelight-cli"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "clap",
  "fuzz-dancelight",
 ]
 
