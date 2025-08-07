@@ -57,12 +57,16 @@ def main():
 
     # resolve presets vs manual
     if args.alias:
+        if args.uri or args.runtime:
+            parser.error("--alias is not compatible with --uri or --runtime")
         cfg = PRESETS[args.alias]
         args.uri = cfg["uri"]
         args.runtime = cfg["runtime"]
-        today = date.today()
-        output_path = f"{args.alias}-{today:%Y-%m-%d}.json"
-        args.output = output_path
+        # Use default output path only if none was provided
+        if not args.output:
+            today = date.today()
+            output_path = f"{args.alias}-{today:%Y-%m-%d}.json"
+            args.output = output_path
     else:
         # enforce manual when no alias
         if not (args.uri and args.runtime and args.output):
