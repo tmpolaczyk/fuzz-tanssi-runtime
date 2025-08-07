@@ -1375,6 +1375,7 @@ pub fn fuzz_zombie(data: &[u8]) {
     //println!("{:?}", extrinsics);
 
     let mut block: u32 = 1;
+    let mut slot: Cell<u64> = Cell::new(1);
     let mut weight: Weight = Weight::zero();
     let mut elapsed: Duration = Duration::ZERO;
     let mut block_rewards: Cell<u128> = Cell::new(0);
@@ -1384,14 +1385,13 @@ pub fn fuzz_zombie(data: &[u8]) {
         log::debug!(target: "fuzz::initialize", "\ninitializing block {block}");
 
         let validators = dancelight_runtime::Session::validators();
-        let slot = Slot::from(u64::from(block));
         let authority_index =
-            u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
+            u32::try_from(u64::from(slot.get()) % u64::try_from(validators.len()).unwrap()).unwrap();
         let pre_digest = Digest {
             logs: vec![DigestItem::PreRuntime(
                 BABE_ENGINE_ID,
                 PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
-                    slot,
+                    slot: Slot::from(slot.get()),
                     authority_index,
                 })
                 .encode(),
@@ -1441,7 +1441,8 @@ pub fn fuzz_zombie(data: &[u8]) {
 
         Executive::initialize_block(&parent_header);
 
-        Timestamp::set(RuntimeOrigin::none(), u64::from(block) * SLOT_DURATION).unwrap();
+        Timestamp::set(RuntimeOrigin::none(), slot.get() * SLOT_DURATION).unwrap();
+        slot.set(slot.get() + 1);
 
         Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
             CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data {
@@ -1655,9 +1656,10 @@ pub fn fuzz_zombie(data: &[u8]) {
                             continue;
                         }
                         FuzzRuntimeCall::NewSession => {
-                            // TODO: since sessions are timestamp based in relay chain, we can just
+                            // Since sessions are timestamp based in relay chain, we can just
                             // mock the timestamp and create one block only
-                            // But no idea how to do that :(
+                            // 1 session = 10 blocks so increase timestamp by 10 slots
+                            slot.set(slot.get() + 10);
 
                             let session_start = Session::current_index();
                             let mut count = 0u32;
@@ -1677,8 +1679,7 @@ pub fn fuzz_zombie(data: &[u8]) {
                                     break;
                                 }
                             }
-                            log::info!("NewSession: created {} blocks", count);
-
+                            assert_eq!(count, 1, "NewSession: created {} blocks", count);
                             continue;
                         }
                     }
