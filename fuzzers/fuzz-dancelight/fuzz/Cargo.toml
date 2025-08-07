@@ -7,25 +7,6 @@ version = "0.0.0"
 [package.metadata]
 cargo-fuzz = true
 
-[[bin]]
-name = "fuzz_live_oneblock"
-path = "fuzz_targets/fuzz_live_oneblock.rs"
-test = false
-doc = false
-bench = false
-[[bin]]
-name = "fuzz_zombie"
-path = "fuzz_targets/fuzz_zombie.rs"
-test = false
-doc = false
-bench = false
-[[bin]]
-name = "fuzz_decode_calls"
-path = "fuzz_targets/fuzz_decode_calls.rs"
-test = false
-doc = false
-bench = false
-
 [dependencies]
 libfuzzer-sys = "0.4"
 
