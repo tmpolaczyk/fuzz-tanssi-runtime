@@ -1978,21 +1978,20 @@ pub fn extrinsics_iter_only_runtime_calls(mut extrinsic_data: &[u8]) -> impl Ite
     // Use new types to keep encoded byte compatibility with the real `ExtrOrPseudo`.
     // So any bytes that decode to a valid `ExtrOrPseudo::RuntimeCall` will be valid here, and vice-versa.
     #[derive(Debug, Encode, Decode, TypeInfo, Clone)]
-    pub enum ExtrOrPseudoOnlyExtr {
-        Extr(RuntimeCall),
-        Pseudo(NoPseudo),
+    pub struct ExtrOrPseudoOnlyExtr {
+        tag: u8,
+        runtime_call: RuntimeCall,
     }
 
-    #[derive(Debug, Encode, Decode, TypeInfo, Clone)]
-    pub enum NoPseudo {
-        // Intentionally empty
-    }
-
-    iter::from_fn(move || ExtrOrPseudoOnlyExtr::decode_with_depth_limit(64, &mut extrinsic_data).ok()).map(|x| {
-        match x {
-            ExtrOrPseudoOnlyExtr::Extr(call) => ExtrOrPseudo::Extr(call),
-            ExtrOrPseudoOnlyExtr::Pseudo(never) => unreachable!(),
+    iter::from_fn(move || {
+        // Force tag to always be 0, emulating the 0 tag from the ExtrOrPseudo enum
+        if extrinsic_data.get(0).copied() != Some(0) {
+            return None;
         }
+        ExtrOrPseudoOnlyExtr::decode_with_depth_limit(64, &mut extrinsic_data).ok()
+    }).map(|x| {
+        assert_eq!(x.tag, 0);
+        ExtrOrPseudo::Extr(x.runtime_call)
     })
 }
 
