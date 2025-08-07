@@ -1,7 +1,10 @@
-use anyhow::Result;
+use std::path::Path;
+use std::sync::mpsc;
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use fuzz_dancelight::{extrinsics_iter, ExtrOrPseudo};
 use scale_info::TypeInfo;
+use notify::{Watcher, RecursiveMode, recommended_watcher, Event};
 
 /// CLI for fuzz-dancelight
 #[derive(Parser)]
@@ -38,7 +41,15 @@ enum Commands {
     DecodeInput {
         #[arg(long)]
         input_path: String,
-    }
+    },
+
+    /// Decode a corpus input
+    DecodeInputWatch {
+        #[arg(long)]
+        corpus_path: String,
+        //#[arg(long, short = "n")]
+        //interval: f32,
+    },
 }
 
 fn main() -> Result<()> {
@@ -74,6 +85,51 @@ fn main() -> Result<()> {
             for x in extr {
                 println!("{:?}", x);
             }
+            Ok(())
+        }
+
+        Commands::DecodeInputWatch { corpus_path } => {
+            if false {
+                // Initial processing: find and decode the most recent file
+                if let Some(newest) = std::fs::read_dir(&corpus_path)?
+                    .filter_map(Result::ok)
+                    .filter_map(|e| e.metadata().ok().and_then(|m| m.modified().ok().map(|t| (t, e.path()))))
+                    .max_by_key(|(t, _)| *t)
+                    .map(|(_, path)| path)
+                {
+                    let bytes = std::fs::read(&newest)
+                        .map_err(|e| anyhow!("failed to read {}: {}", newest.display(), e))?;
+                    for extr in extrinsics_iter(&bytes) {
+                        println!("{:?}", extr);
+                    }
+                }
+            }
+
+            // Watch for new files and process immediately
+            let (tx, rx) = mpsc::channel();
+            let mut watcher = recommended_watcher(tx)
+                .map_err(|e| anyhow!("failed to create watcher: {}", e))?;
+            watcher.watch(Path::new(&corpus_path), RecursiveMode::NonRecursive)
+                .map_err(|e| anyhow!("failed to watch {}: {}", corpus_path, e))?;
+
+            for res in rx {
+                let paths = match res {
+                    Ok(Event { paths, .. }) => paths,
+                    Err(e) => return Err(e.into()),
+                };
+                for path in paths {
+                    if path.is_file() {
+                        let bytes = std::fs::read(&path)
+                            .map_err(|e| anyhow!("failed to read {}: {}", path.display(), e))?;
+                        println!();
+                        println!("{}", path.display());
+                        for extr in extrinsics_iter(&bytes) {
+                            println!("{:?}", extr);
+                        }
+                    }
+                }
+            }
+
             Ok(())
         }
     }

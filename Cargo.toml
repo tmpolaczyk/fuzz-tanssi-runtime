@@ -76,6 +76,7 @@ trie-db = { version = "0.30" }
 # cli dependencies
 clap = { version = "4.5.42" }
 anyhow = "1.0.98"
+notify = "8.2.0"
 
 [workspace.lints.clippy]
 # Deny main lint groups

@@ -771,7 +771,7 @@ fn init_panic_logger() -> Result<(), SetLoggerError> {
     Ok(())
 }
 
-fn init_logger() {
+pub fn init_logger() {
     // If you want to find a test case to reproduce an error log, use this logger instead
     //init_panic_logger().unwrap();
     //return;
@@ -1971,6 +1971,29 @@ fn extrinsics_iter_ignore_errors(
 
 pub fn extrinsics_iter(mut extrinsic_data: &[u8]) -> impl Iterator<Item = ExtrOrPseudo> + use<'_> {
     iter::from_fn(move || DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
+}
+
+/// Same as `extrinsics_iter` but only decodes `RuntimeCall` variant, errors on any other variant
+pub fn extrinsics_iter_only_runtime_calls(mut extrinsic_data: &[u8]) -> impl Iterator<Item = ExtrOrPseudo> + use<'_> {
+    // Use new types to keep encoded byte compatibility with the real `ExtrOrPseudo`.
+    // So any bytes that decode to a valid `ExtrOrPseudo::RuntimeCall` will be valid here, and vice-versa.
+    #[derive(Debug, Encode, Decode, TypeInfo, Clone)]
+    pub enum ExtrOrPseudoOnlyExtr {
+        Extr(RuntimeCall),
+        Pseudo(NoPseudo),
+    }
+
+    #[derive(Debug, Encode, Decode, TypeInfo, Clone)]
+    pub enum NoPseudo {
+        // Intentionally empty
+    }
+
+    iter::from_fn(move || ExtrOrPseudoOnlyExtr::decode_with_depth_limit(64, &mut extrinsic_data).ok()).map(|x| {
+        match x {
+            ExtrOrPseudoOnlyExtr::Extr(call) => ExtrOrPseudo::Extr(call),
+            ExtrOrPseudoOnlyExtr::Pseudo(never) => unreachable!(),
+        }
+    })
 }
 
 struct CursorOutputIgnoreErrors<W>(std::io::Cursor<W>);
