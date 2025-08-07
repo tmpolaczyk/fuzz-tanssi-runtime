@@ -3554,6 +3554,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fuzz-dancelight-cli"
+version = "0.1.0"
+dependencies = [
+ "fuzz-dancelight",
+]
+
+[[package]]
 name = "fuzz-dancelight-fuzz"
 version = "0.0.0"
 dependencies = [

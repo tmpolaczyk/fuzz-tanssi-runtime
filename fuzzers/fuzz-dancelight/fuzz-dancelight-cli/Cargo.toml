@@ -1,0 +1,12 @@
+[package]
+name = "fuzz-dancelight-cli"
+authors = { workspace = true }
+edition = "2024"
+license = "GPL-3.0-only"
+version = "0.1.0"
+
+[dependencies]
+fuzz-dancelight = { workspace = true }
+
+[lints]
+workspace = true

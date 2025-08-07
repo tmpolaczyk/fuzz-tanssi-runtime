@@ -5,6 +5,7 @@ default-members = [
 members = [
 	"fuzzers/*",
 	"fuzzers/fuzz-dancelight/fuzz",
+	"fuzzers/fuzz-dancelight/fuzz-dancelight-cli",
 ]
 resolver = "2"
 
@@ -13,6 +14,8 @@ authors = [ "Tomasz Polaczyk" ]
 repository = "https://github.com/tmpolaczyk/fuzz-tanssi-runtime"
 
 [workspace.dependencies]
+fuzz-dancelight = { path = "fuzzers/fuzz-dancelight" }
+
 dancelight-runtime = { path = "../tanssi/chains/orchestrator-relays/runtime/dancelight", default-features = false }
 dancelight-runtime-constants = { path = "../tanssi/chains/orchestrator-relays/runtime/dancelight/constants/", default-features = false }
 pallet-configuration = { path = "../tanssi/pallets/configuration", default-features = false }
