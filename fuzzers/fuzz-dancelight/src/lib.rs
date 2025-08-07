@@ -593,7 +593,7 @@ mod read_snapshot {
 
 fn genesis_storage_from_snapshot() -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
     const EXPORTED_STATE_CHAIN_SPEC_JSON: &[u8] =
-        include_bytes!("../../../snapshots/starlight-2025-08-05.json");
+        include_bytes!("../../../snapshots/dancelight-2025-08-07.json");
 
     read_snapshot::read_snapshot(EXPORTED_STATE_CHAIN_SPEC_JSON)
 }
