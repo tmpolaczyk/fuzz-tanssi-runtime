@@ -2050,3 +2050,25 @@ pub fn fuzz_mutator_extr_or_pseudo(
         new_len
     }
 }
+
+/// Wrap [`extrinsics_iter`] but only decode the first item.
+/// This limits the fuzzer to 1 extrinsic per corpus file, while still keeping the Vec<Extr> format
+/// in corpus files.
+/// Note that since we ignore trailing bytes, it is possible that the remaining bytes also decode to
+/// valid extrinsics. So it cannot be assumed that the corpus files all have only 1 extrinsic each.
+/// But only the first extrinsic affects the coverage of this fuzzer.
+fn one_extrinsic_iter(extrinsic_data: &[u8]) -> impl Iterator<Item = ()> + use<'_> {
+    extrinsics_iter_only_runtime_calls(extrinsic_data)
+        .map(drop)
+        .take(1)
+}
+
+pub fn fuzz_init_only_logger() {
+    init_logger();
+}
+
+pub fn fuzz_decode_calls(data: &[u8]) {
+    //println!("data: {:?}", data);
+    let num_extrinsics = one_extrinsic_iter(data).count();
+    assert!(num_extrinsics <= 1);
+}

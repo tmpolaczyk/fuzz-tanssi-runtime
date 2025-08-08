@@ -1,8 +1,8 @@
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use fuzz_dancelight::{
-    ExtrOrPseudo, FuzzLiveOneblock, FuzzZombie, extrinsics_iter, fuzz_init, fuzz_live_oneblock,
-    fuzz_zombie,
+    ExtrOrPseudo, FuzzLiveOneblock, FuzzZombie, extrinsics_iter, fuzz_decode_calls, fuzz_init,
+    fuzz_init_only_logger, fuzz_live_oneblock, fuzz_zombie,
 };
 use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
 use scale_info::TypeInfo;
@@ -59,14 +59,14 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::ExecuteCorpus { fuzz_target } => {
             match fuzz_target.as_str() {
-                "fuzz_decode_calls" => todo!(),
+                "fuzz_decode_calls" => fuzz_init_only_logger(),
                 "fuzz_live_oneblock" => fuzz_init::<FuzzLiveOneblock>(),
                 "fuzz_zombie" => fuzz_init::<FuzzZombie>(),
                 _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
             };
 
             let fuzz_main = match fuzz_target.as_str() {
-                "fuzz_decode_calls" => todo!(),
+                "fuzz_decode_calls" => fuzz_decode_calls,
                 "fuzz_live_oneblock" => fuzz_live_oneblock::<FuzzLiveOneblock>,
                 "fuzz_zombie" => fuzz_zombie::<FuzzZombie>,
                 _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
