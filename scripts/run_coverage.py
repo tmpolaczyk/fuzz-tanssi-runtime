@@ -5,21 +5,27 @@ import subprocess
 import shutil
 from datetime import datetime
 
+
 def build_coverage_binary(runtime_name):
     """
     Builds the coverage binary by running a cargo run command with specific RUSTFLAGS.
     """
     env = os.environ.copy()
-    env["RUSTFLAGS"] = "--cfg fuzzing --cfg coverage -C opt-level=3 -C target-cpu=native -C instrument-coverage"
-    #env["RUSTFLAGS"] = "--cfg fuzzing --cfg coverage -C opt-level=3 -C target-cpu=native"
-    #env["RUSTFLAGS"] = "--cfg fuzzing --cfg coverage -C opt-level=3"
+    env["RUSTFLAGS"] = (
+        "--cfg fuzzing --cfg coverage -C opt-level=3 -C target-cpu=native -C instrument-coverage"
+    )
+    # env["RUSTFLAGS"] = "--cfg fuzzing --cfg coverage -C opt-level=3 -C target-cpu=native"
+    # env["RUSTFLAGS"] = "--cfg fuzzing --cfg coverage -C opt-level=3"
     env["LLVM_PROFILE_FILE"] = "/dev/null"
-    #subprocess.run(["cargo", "build", "-Z", "build-std", "--target", "x86_64-unknown-linux-gnu", "--bin", f"{target_name}_coverage"], env=env, check=True)
+    # subprocess.run(["cargo", "build", "-Z", "build-std", "--target", "x86_64-unknown-linux-gnu", "--bin", f"{target_name}_coverage"], env=env, check=True)
     # -Z build-std is not compatible with -C instrument-coverage
     # cargo run --release -p fuzz-dancelight-cli -- execute-corpus --fuzz-target fuzz_live_oneblock
-    subprocess.run(["cargo", "build", "-p", f"fuzz-{runtime_name}-cli"], env=env, check=True)
-    #env["RUSTFLAGS"] = "--cfg fuzzing"
-    #subprocess.run(["cargo", "miri", "run", "--bin", f"{target_name}_coverage"], env=env, check=True)
+    subprocess.run(
+        ["cargo", "build", "-p", f"fuzz-{runtime_name}-cli"], env=env, check=True
+    )
+    # env["RUSTFLAGS"] = "--cfg fuzzing"
+    # subprocess.run(["cargo", "miri", "run", "--bin", f"{target_name}_coverage"], env=env, check=True)
+
 
 def rm_rf_contents(path):
     for filename in os.listdir(path):
@@ -28,6 +34,8 @@ def rm_rf_contents(path):
             shutil.rmtree(file_path)
         else:
             os.remove(file_path)
+
+
 def execute_coverage_binary(runtime_name, target_name):
     """
     Executes the 'fuzz_raw_coverage' binary located in the 'target/debug' directory.
@@ -41,9 +49,19 @@ def execute_coverage_binary(runtime_name, target_name):
         env["RUST_LOG"] = "off"
         bin_name = f"fuzz-{runtime_name}-cli"
         # cargo run --release -p fuzz-dancelight-cli -- execute-corpus --fuzz-target fuzz_live_oneblock
-        subprocess.run([f"./target/debug/{bin_name}", "execute-corpus", "--fuzz-target", target_name], env=env, check=True)
+        subprocess.run(
+            [
+                f"./target/debug/{bin_name}",
+                "execute-corpus",
+                "--fuzz-target",
+                target_name,
+            ],
+            env=env,
+            check=True,
+        )
     except Exception as e:
         print(f"Failed to execute '{target_name}': {e}")
+
 
 def generate_html_report(runtime_name):
     base_dir = "coverage"
@@ -82,17 +100,29 @@ def generate_html_report(runtime_name):
 
     # Merge all raw profiles into a single .profdata
     subprocess.run(
-        ["cargo-profdata", "--", "merge", "--sparse", "proffiles/", "-o", profdata_path],
+        [
+            "cargo-profdata",
+            "--",
+            "merge",
+            "--sparse",
+            "proffiles/",
+            "-o",
+            profdata_path,
+        ],
         check=True,
     )
 
     # Generate HTML report
     subprocess.run(
         [
-            "cargo-cov", "--", "show", bin_path,
+            "cargo-cov",
+            "--",
+            "show",
+            bin_path,
             f"--instr-profile={profdata_path}",
             "--format=html",
-            "--output-dir", output_path,
+            "--output-dir",
+            output_path,
             "--show-branches=count",
             "--show-line-counts-or-regions",
             "--show-expansions",
@@ -101,8 +131,11 @@ def generate_html_report(runtime_name):
         check=True,
     )
 
-    print(f"HTML coverage report generated at {os.path.join(output_path, 'index.html')}")
+    print(
+        f"HTML coverage report generated at {os.path.join(output_path, 'index.html')}"
+    )
     return
+
 
 def upload_to_ghpages(runtime_name):
     return
@@ -117,10 +150,19 @@ def upload_to_ghpages(runtime_name):
     git checkout -
     """
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Build, run fuzz coverage, and generate HTML report.")
-    parser.add_argument("--fuzz-target", required=True, help="Fuzz target name (e.g., fuzz_live_oneblock)")
-    parser.add_argument("--runtime", required=True, help="Runtime name (e.g., dancelight)")
+    parser = argparse.ArgumentParser(
+        description="Build, run fuzz coverage, and generate HTML report."
+    )
+    parser.add_argument(
+        "--fuzz-target",
+        required=True,
+        help="Fuzz target name (e.g., fuzz_live_oneblock)",
+    )
+    parser.add_argument(
+        "--runtime", required=True, help="Runtime name (e.g., dancelight)"
+    )
     args = parser.parse_args()
 
     target_name = args.fuzz_target
@@ -131,6 +173,6 @@ def main():
     generate_html_report(runtime_name)
     upload_to_ghpages(runtime_name)
 
+
 if __name__ == "__main__":
     main()
-
