@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import os
 import subprocess
 import shutil
@@ -117,8 +118,14 @@ def upload_to_ghpages(runtime_name):
     """
 
 def main():
-    target_name = "fuzz_live_oneblock"
-    runtime_name = "dancelight"
+    parser = argparse.ArgumentParser(description="Build, run fuzz coverage, and generate HTML report.")
+    parser.add_argument("--fuzz-target", required=True, help="Fuzz target name (e.g., fuzz_live_oneblock)")
+    parser.add_argument("--runtime", required=True, help="Runtime name (e.g., dancelight)")
+    args = parser.parse_args()
+
+    target_name = args.fuzz_target
+    runtime_name = args.runtime
+
     build_coverage_binary(runtime_name)
     execute_coverage_binary(runtime_name, target_name)
     generate_html_report(runtime_name)
