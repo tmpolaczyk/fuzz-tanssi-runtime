@@ -11,6 +11,11 @@ def build_coverage_binary(runtime_name):
     Builds the coverage binary by running a cargo run command with specific RUSTFLAGS.
     """
     env = os.environ.copy()
+    # TODO: try to fix branch coverage
+    # https://doc.rust-lang.org/unstable-book/compiler-flags/coverage-options.html
+    # -Zcoverage-options=branch doesn't work:
+    # PLEASE submit a bug report to https://github.com/llvm/llvm-project/issues/ and include the crash backtrace.
+    # -Zcoverage-options=condition also doesn't work, same error
     env["RUSTFLAGS"] = (
         "--cfg fuzzing --cfg coverage -C opt-level=3 -C target-cpu=native -C instrument-coverage"
     )
