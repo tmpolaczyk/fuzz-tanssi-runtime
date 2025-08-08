@@ -1,10 +1,15 @@
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
-use fuzz_dancelight::{ExtrOrPseudo, extrinsics_iter};
+use fuzz_dancelight::{
+    ExtrOrPseudo, FuzzLiveOneblock, FuzzZombie, extrinsics_iter, fuzz_init, fuzz_live_oneblock,
+    fuzz_zombie,
+};
 use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
 use scale_info::TypeInfo;
 use std::path::Path;
 use std::sync::mpsc;
+
+mod coverage;
 
 /// CLI for fuzz-dancelight
 #[derive(Parser)]
@@ -22,9 +27,6 @@ enum Commands {
         /// The name of the fuzz target to run
         #[arg(long)]
         fuzz_target: String,
-        /// Path to the input corpus directory
-        #[arg(long)]
-        corpus_path: String,
     },
 
     /// Update a snapshot and output as hex
@@ -55,16 +57,22 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::ExecuteCorpus {
-            fuzz_target,
-            corpus_path,
-        } => {
-            // TODO: implement execute-corpus logic
-            unimplemented!(
-                "execute-corpus: fuzz_target={}, corpus_path={}",
-                fuzz_target,
-                corpus_path
-            );
+        Commands::ExecuteCorpus { fuzz_target } => {
+            match fuzz_target.as_str() {
+                "fuzz_decode_calls" => todo!(),
+                "fuzz_live_oneblock" => fuzz_init::<FuzzLiveOneblock>(),
+                "fuzz_zombie" => fuzz_init::<FuzzZombie>(),
+                _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
+            };
+
+            let fuzz_main = match fuzz_target.as_str() {
+                "fuzz_decode_calls" => todo!(),
+                "fuzz_live_oneblock" => fuzz_live_oneblock::<FuzzLiveOneblock>,
+                "fuzz_zombie" => fuzz_zombie::<FuzzZombie>,
+                _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
+            };
+            coverage::execute_corpus(&fuzz_target, fuzz_main);
+            Ok(())
         }
         Commands::UpdateSnapshot {
             input_snapshot_path,

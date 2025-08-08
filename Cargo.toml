@@ -56,7 +56,6 @@ futures = "0.3.1"
 hash-db = { version = "0.16.0", default-features = false }
 hex = "0.4.3"
 include_dir = "0.7.3"
-indicatif = { version = "0.17", features = [ "rayon" ] }
 itertools = "0.10.5"
 lazy_static = "1.4.0"
 libfuzzer-sys = { version = "0.4" }
@@ -66,7 +65,6 @@ parity-scale-codec = { version = "3.7.5", default-features = false, features = [
 # the arbitrary feature. So add it as a dependency here, even though it is actually a dependency of some dependency
 quinn-proto = { version = "0.9.6", features = [ "arbitrary" ] }
 rand = "0.9.0"
-rayon = "1"
 scale-info = "2.11.5"
 scale-value = "0.18.0"
 serde = { version = "1.0.197", default-features = false }
@@ -77,6 +75,8 @@ trie-db = { version = "0.30" }
 clap = { version = "4.5.42" }
 anyhow = "1.0.98"
 notify = "8.2.0"
+indicatif = { version = "0.17"}
+rayon = "1"
 
 [workspace.lints.clippy]
 # Deny main lint groups
