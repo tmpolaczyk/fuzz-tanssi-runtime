@@ -1,8 +1,8 @@
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use fuzz_dancelight::{
-    ExtrOrPseudo, FuzzLiveOneblock, FuzzZombie, extrinsics_iter, fuzz_decode_calls, fuzz_init,
-    fuzz_init_only_logger, fuzz_live_oneblock, fuzz_zombie,
+    ExtrOrPseudo, FuzzLiveOneblock, FuzzZombie, StorageTracer, extrinsics_iter, fuzz_decode_calls,
+    fuzz_init, fuzz_init_only_logger, fuzz_live_oneblock, fuzz_zombie, trace_storage,
 };
 use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
 use scale_info::TypeInfo;
@@ -27,6 +27,15 @@ enum Commands {
         /// The name of the fuzz target to run
         #[arg(long)]
         fuzz_target: String,
+    },
+
+    /// Execute the corpus fuzzing target
+    StorageTracer {
+        /// The name of the fuzz target to run
+        #[arg(long)]
+        fuzz_target: String,
+        #[arg(long)]
+        input_path: String,
     },
 
     /// Update a snapshot and output as hex
@@ -72,6 +81,27 @@ fn main() -> Result<()> {
                 _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
             };
             coverage::execute_corpus(&fuzz_target, fuzz_main);
+            Ok(())
+        }
+        Commands::StorageTracer {
+            fuzz_target,
+            input_path,
+        } => {
+            if fuzz_target.as_str() != "fuzz_live_oneblock" {
+                unimplemented!()
+            }
+            match fuzz_target.as_str() {
+                "fuzz_decode_calls" => fuzz_init_only_logger(),
+                "fuzz_live_oneblock" => fuzz_init::<FuzzLiveOneblock>(),
+                "fuzz_zombie" => fuzz_init::<FuzzZombie>(),
+                _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
+            };
+
+            let input_bytes = std::fs::read(&input_path)?;
+
+            let mut storage_tracer = StorageTracer::default();
+            // TODO: support other targets?
+            trace_storage::<FuzzLiveOneblock>(&input_bytes, &mut storage_tracer);
             Ok(())
         }
         Commands::UpdateSnapshot {

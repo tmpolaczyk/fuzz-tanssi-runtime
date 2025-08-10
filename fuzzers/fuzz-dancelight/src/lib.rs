@@ -74,6 +74,10 @@ use {
 };
 
 mod genesis;
+mod storage_tracer;
+
+pub use storage_tracer::StorageTracer;
+pub use storage_tracer::trace_storage;
 
 type CallableCallFor<A, R = Runtime> = CallableCallForG<A, R>;
 
@@ -279,6 +283,8 @@ fn get_origin(origin: usize) -> &'static AccountId {
 
 use create_storage::create_storage;
 mod create_storage {
+    use sp_externalities::Externalities;
+    use sp_storage::StorageMap;
     use {
         super::*,
         sp_state_machine::{OverlayedChanges, TrieMut},
@@ -317,6 +323,26 @@ mod create_storage {
         drop(triedbmut);
 
         (storage, root_mut, shared_cache)
+    }
+
+    pub fn ext_to_simple_storage(ext: &mut dyn Externalities) -> Storage {
+        let mut top = StorageMap::default();
+
+        sp_externalities::set_and_run_with_externalities(ext, || {
+            let mut prefix = vec![];
+            while let Some(key) = sp_io::storage::next_key(&prefix) {
+                let value = frame_support::storage::unhashed::get_raw(&key).unwrap();
+                let key = key.to_vec();
+                prefix = key.clone();
+
+                top.insert(key, value);
+            }
+        });
+
+        Storage {
+            top,
+            ..Default::default()
+        }
     }
 }
 
@@ -574,7 +600,9 @@ pub enum ExtrOrPseudo {
                     Pre dispatch weight: Weight { ref_time: 3097114602, proof_size: 276453 },
                     Post dispatch weight: Weight { ref_time: 3099021404, proof_size: 276453 }
 */
+use crate::create_storage::ext_to_simple_storage;
 use crate::genesis::invulnerables_from_seeds;
+use crate::storage_tracer::TracingExt;
 use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
 
 struct PanicOnError;
@@ -725,6 +753,7 @@ static FUZZ_INIT_CALLED: AtomicBool = AtomicBool::new(false);
 
 pub trait FuzzerConfig {
     fn genesis_storage() -> &'static (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>);
+    fn genesis_storage_simple() -> &'static Storage;
 }
 
 pub struct FuzzLiveOneblock;
@@ -738,6 +767,28 @@ impl FuzzerConfig for FuzzLiveOneblock {
         }
         &*GENESIS_STORAGE
     }
+    // TODO: caching Storage is useless because BasicExternalities needs a clone of the entire Storage
+    // And trying to cache BasicExternalities directly doesn't work because there is a RefCell somewhere
+    // maybe using thread_local and unsafe ref to ref mut its doable, but not sure
+    fn genesis_storage_simple() -> &'static Storage {
+        lazy_static::lazy_static! {
+            static ref GENESIS_STORAGE: Storage = {
+                use sp_runtime::traits::BlakeTwo256;
+                use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
+                let mut overlay = OverlayedChanges::default();
+                let (storage, root, shared_cache) = FuzzLiveOneblock::genesis_storage();
+                let root = *root;
+                let cache = shared_cache.local_cache();
+                let mut backend: TrieBackend<_, BlakeTwo256> =
+                    TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+                let extensions = None;
+                let mut ext = Ext::new(&mut overlay, &backend, extensions);
+
+                ext_to_simple_storage(&mut ext)
+            };
+        }
+        &*GENESIS_STORAGE
+    }
 }
 
 pub struct FuzzZombie;
@@ -747,6 +798,25 @@ impl FuzzerConfig for FuzzZombie {
         lazy_static::lazy_static! {
             static ref GENESIS_STORAGE: (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) = {
                 genesis_storage_from_zombienet()
+            };
+        }
+        &*GENESIS_STORAGE
+    }
+    fn genesis_storage_simple() -> &'static Storage {
+        lazy_static::lazy_static! {
+            static ref GENESIS_STORAGE: Storage = {
+                use sp_runtime::traits::BlakeTwo256;
+                use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
+                let mut overlay = OverlayedChanges::default();
+                let (storage, root, shared_cache) = FuzzZombie::genesis_storage();
+                let root = *root;
+                let cache = shared_cache.local_cache();
+                let mut backend: TrieBackend<_, BlakeTwo256> =
+                    TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+                let extensions = None;
+                let mut ext = Ext::new(&mut overlay, &backend, extensions);
+
+                ext_to_simple_storage(&mut ext)
             };
         }
         &*GENESIS_STORAGE
@@ -916,6 +986,9 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig>(data: &[u8]) {
         TrieBackendBuilder::new_with_cache(storage, root, cache).build();
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
+
+    let mut ext = TracingExt::new(ext);
+
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
 
@@ -1181,6 +1254,8 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig>(data: &[u8]) {
             final_total_issuance
         );
     });
+
+    //ext.tracer.print_summary();
 }
 
 /// Start fuzzing a genesis raw spec generated by zombienet.
@@ -1765,6 +1840,7 @@ pub fn fuzz_init<FC: FuzzerConfig>() {
 
     // Initialize genesis storage
     FC::genesis_storage();
+    FC::genesis_storage_simple();
 
     // Initialize stuff related to metadata (needs externalities)
     use sp_runtime::traits::BlakeTwo256;
