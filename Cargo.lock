@@ -2940,6 +2940,7 @@ dependencies = [
  "clap",
  "fuzz-dancelight",
  "indicatif",
+ "lazy_static",
  "notify",
  "rayon",
  "scale-info",

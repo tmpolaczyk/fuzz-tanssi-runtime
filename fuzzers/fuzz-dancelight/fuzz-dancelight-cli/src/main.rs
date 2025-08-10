@@ -7,7 +7,7 @@ use fuzz_dancelight::{
 use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
 use scale_info::TypeInfo;
 use std::path::Path;
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
 
 mod coverage;
 
@@ -34,8 +34,10 @@ enum Commands {
         /// The name of the fuzz target to run
         #[arg(long)]
         fuzz_target: String,
-        #[arg(long)]
-        input_path: String,
+        #[arg(long, conflicts_with = "corpus_path")]
+        input_path: Option<String>,
+        #[arg(long, conflicts_with = "input_path")]
+        corpus_path: Option<String>,
     },
 
     /// Update a snapshot and output as hex
@@ -86,7 +88,12 @@ fn main() -> Result<()> {
         Commands::StorageTracer {
             fuzz_target,
             input_path,
+            corpus_path,
         } => {
+            if input_path.is_some() == corpus_path.is_some() {
+                panic!("exactly one of --input-path or --corpus_path must be provided");
+            }
+
             if fuzz_target.as_str() != "fuzz_live_oneblock" {
                 unimplemented!()
             }
@@ -97,12 +104,34 @@ fn main() -> Result<()> {
                 _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
             };
 
-            let input_bytes = std::fs::read(&input_path)?;
+            if let Some(input_path) = input_path {
+                let input_bytes = std::fs::read(&input_path)?;
 
-            let mut storage_tracer = StorageTracer::default();
-            // TODO: support other targets?
-            trace_storage::<FuzzLiveOneblock>(&input_bytes, &mut storage_tracer);
-            Ok(())
+                let mut storage_tracer = StorageTracer::default();
+                // TODO: support other targets?
+                trace_storage::<FuzzLiveOneblock>(&input_bytes, &mut storage_tracer);
+                Ok(())
+            } else if let Some(corpus_path) = corpus_path {
+                lazy_static::lazy_static! {
+                    static ref STORAGE_TRACER: Arc<Mutex<StorageTracer>> = {
+                        Arc::new(Mutex::new(StorageTracer::default()))
+                    };
+                }
+
+                fn fuzz_main_trace_storage(data: &[u8]) {
+                    let mut storage_tracer = STORAGE_TRACER.lock().unwrap();
+                    trace_storage::<FuzzLiveOneblock>(&data, &mut storage_tracer);
+                }
+
+                coverage::execute_corpus(&fuzz_target, fuzz_main_trace_storage);
+
+                let storage_tracer = STORAGE_TRACER.lock().unwrap();
+                storage_tracer.print_histograms();
+
+                Ok(())
+            } else {
+                unreachable!()
+            }
         }
         Commands::UpdateSnapshot {
             input_snapshot_path,

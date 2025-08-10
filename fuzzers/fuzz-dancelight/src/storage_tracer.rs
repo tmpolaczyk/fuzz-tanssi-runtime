@@ -1,5 +1,6 @@
 use crate::create_storage::ext_to_simple_storage;
 pub use crate::storage_tracer::tracing_externalities::TracingExt;
+use crate::storage_tracer::tracing_externalities::{ExtStorageTracer, ReadOrWrite};
 use crate::{
     CallableCallFor, ExtrOrPseudo, FuzzRuntimeCall, FuzzerConfig, get_origin,
     recursively_find_call, root_can_call,
@@ -237,7 +238,7 @@ mod tracing_externalities {
     use std::collections::HashSet;
 
     #[derive(Debug)]
-    enum ReadOrWrite {
+    pub enum ReadOrWrite {
         Read(Vec<u8>),
         Write(Vec<u8>, Vec<u8>),
         Remove(Vec<u8>),
@@ -251,14 +252,31 @@ mod tracing_externalities {
 
     #[derive(Debug)]
     pub struct ExtStorageTracer {
-        trace: Vec<ReadOrWrite>,
-        whitelisted: HashSet<Vec<u8>>,
+        pub trace: Vec<ReadOrWrite>,
+        pub whitelisted: HashSet<Vec<u8>>,
     }
 
     impl Default for ExtStorageTracer {
         fn default() -> Self {
-            let whitelisted =
-                HashSet::from_iter([b":transaction_level:"].into_iter().map(|x| x.to_vec()));
+            let whitelisted = HashSet::from_iter([
+                b":transaction_level:".to_vec(),
+                // MaintenanceMode MaintenanceMode
+                // Checked for each extrinsic dispatch to decide whether to allow it or not
+                hex::decode("e11a6a33190df528cea25070debd8681e11a6a33190df528cea25070debd8681")
+                    .unwrap(),
+                // System Number
+                hex::decode("26aa394eea5630e07c48ae0c9558cef702a5c1b19ab7a04f536c519aca4983ac")
+                    .unwrap(),
+                // System EventCount
+                hex::decode("26aa394eea5630e07c48ae0c9558cef70a98fdbe9ce6c55837576c60c7af3850")
+                    .unwrap(),
+                // System Events
+                hex::decode("26aa394eea5630e07c48ae0c9558cef780d41e5e16056765bc8461851072c9d7")
+                    .unwrap(),
+                // System ExecutionPhase
+                hex::decode("26aa394eea5630e07c48ae0c9558cef7ff553b5a9862a516939d82b3d3d8661a")
+                    .unwrap(),
+            ]);
 
             Self {
                 trace: Default::default(),
@@ -556,6 +574,10 @@ mod tracing_externalities {
 pub struct StorageTracer {
     readers: ManyToMany<CallIndex, StorageKey>,
     writers: ManyToMany<CallIndex, StorageKey>,
+    // histogram of key => num_reads
+    top_reads: HashMap<Vec<u8>, u32>,
+    // histogram of key => num_writes
+    top_writes: HashMap<Vec<u8>, u32>,
 }
 
 impl StorageTracer {
@@ -618,6 +640,66 @@ impl StorageTracer {
     }
     pub fn get_writers_vec(&self, key: &[u8]) -> Vec<CallIndex> {
         self.get_writers(key).copied().collect()
+    }
+
+    pub fn update_histograms(&mut self, ext_tracer: &ExtStorageTracer) {
+        for x in ext_tracer.trace.iter() {
+            match x {
+                ReadOrWrite::Read(key) => {
+                    *self.top_reads.entry(key.clone()).or_insert(0) += 1;
+                }
+                ReadOrWrite::Write(key, _) => {
+                    *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                }
+                ReadOrWrite::Remove(key) => {
+                    *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                }
+                ReadOrWrite::Append(key, _) => {
+                    *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                }
+                ReadOrWrite::KillPrefix(key) => {
+                    *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                }
+                ReadOrWrite::KillPrefixPartial(key, _) => {
+                    *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                }
+                ReadOrWrite::StartTransaction => {}
+                ReadOrWrite::RollbackTransaction => {}
+                ReadOrWrite::CommitTransaction => {}
+            }
+        }
+    }
+
+    pub fn print_histograms(&self) {
+        fn print_top(map: &HashMap<Vec<u8>, u32>, heading: &str) {
+            let mut items: Vec<(&[u8], u32)> =
+                map.iter().map(|(k, &v)| (k.as_slice(), v)).collect();
+
+            if items.is_empty() {
+                println!("<empty>");
+                return;
+            }
+            let k = 10.min(items.len());
+
+            // Partition so the largest k elements (by count, then key) are in the last k slots.
+            let nth_index = items.len() - k;
+            items.select_nth_unstable_by(nth_index, |a, b| {
+                // Ascending for the partition step (so biggest end up to the right)
+                a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0))
+            });
+            // Sort only the top-k slice for deterministic, pretty output (count desc, key asc).
+            let topk = &mut items[nth_index..];
+            topk.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+            println!("{heading}");
+            for (key, count) in topk.iter() {
+                println!("{:>8}  {}", count, hex::encode(key));
+            }
+        }
+
+        print_top(&self.top_reads, "Top 10 reads");
+        println!();
+        print_top(&self.top_writes, "Top 10 writes");
     }
 }
 
@@ -772,8 +854,17 @@ pub fn trace_storage<FC: FuzzerConfig>(data: &[u8], storage_tracer: &mut Storage
         Executive::finalize_block();
     };
 
-    let mut basic_ext = BasicExternalities::new(FC::genesis_storage_simple().to_owned());
-    let mut ext = TracingExt::new(basic_ext);
+    use sp_runtime::traits::BlakeTwo256;
+    use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
+    let mut overlay = OverlayedChanges::default();
+    let (storage, root, shared_cache) = FC::genesis_storage();
+    let root = *root;
+    let cache = shared_cache.local_cache();
+    let mut backend: TrieBackend<_, BlakeTwo256> =
+        TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+    let extensions = None;
+    let mut ext = Ext::new(&mut overlay, &backend, extensions);
+    let mut ext = TracingExt::new(ext);
 
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
@@ -969,5 +1060,6 @@ pub fn trace_storage<FC: FuzzerConfig>(data: &[u8], storage_tracer: &mut Storage
         );
     });
 
-    ext.tracer.print_summary();
+    //ext.tracer.print_summary();
+    storage_tracer.update_histograms(&ext.tracer);
 }

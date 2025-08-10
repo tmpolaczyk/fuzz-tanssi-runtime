@@ -976,7 +976,6 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig>(data: &[u8]) {
     };
 
     use sp_runtime::traits::BlakeTwo256;
-
     use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
     let mut overlay = OverlayedChanges::default();
     let (storage, root, shared_cache) = FC::genesis_storage();
