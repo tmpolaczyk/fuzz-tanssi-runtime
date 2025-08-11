@@ -10,6 +10,7 @@ use dancelight_runtime::Session;
 use itertools::{EitherOrBoth, Itertools};
 use libfuzzer_sys::arbitrary;
 use libfuzzer_sys::arbitrary::{Arbitrary, Unstructured};
+use std::collections::HashMap;
 use {
     cumulus_primitives_core::ParaId,
     dancelight_runtime::{
@@ -114,6 +115,8 @@ fn recursively_find_call(call: RuntimeCall, matches_on: fn(RuntimeCall) -> bool)
 /// Return true if the root origin can execute this extrinsic.
 /// Any extrinsic that could brick the chain should be disabled, we only want to test real-world scenarios.
 fn root_can_call(call: &RuntimeCall) -> bool {
+    // TODO: for storage tracing fuzz_live_oneblock: disable root extrinsics
+    return false;
     match call {
         // Allow root to call any pallet_registrar extrinsic, as it is unlikely to brick the chain
         // TODO: except register(1000), because that may actually break some things
@@ -545,6 +548,121 @@ lazy_static::lazy_static! {
     static ref ACCOUNT_ID_TYPE_ID: u32 = {
         find_type_id(&METADATA.types, "AccountId")
     };
+
+    /// twox128(pallet_storage_prefix) -> pallet_name
+    static ref PALLET_PREFIX_TO_NAME: HashMap<[u8; 16], String> = {
+        let meta: &RuntimeMetadataV15 = &*METADATA;
+        let mut m = HashMap::new();
+
+        for pallet in &meta.pallets {
+            if let Some(storage) = &pallet.storage {
+                let h = sp_core::hashing::twox_128(storage.prefix.as_bytes());
+                if let Some(prev) = m.insert(h, pallet.name.clone()) {
+                    panic!(
+                        "twox128 collision for pallet storage prefix: hash {} used by '{}' and '{}'",
+                        hex::encode(&h), prev, pallet.name
+                    );
+                }
+            }
+        }
+        m
+    };
+
+    /// twox128(pallet_prefix) ++ twox128(storage_name) -> (pallet_name, storage_name)
+    pub static ref STORAGE_PREFIX_TO_NAMES: HashMap<[u8; 32], (String, String)> = {
+        let meta: &RuntimeMetadataV15 = &*METADATA;
+        let mut m = HashMap::new();
+
+        for pallet in &meta.pallets {
+            if let Some(storage) = &pallet.storage {
+                let pallet_hash = sp_core::hashing::twox_128(storage.prefix.as_bytes());
+                for entry in &storage.entries {
+                    let entry_hash = sp_core::hashing::twox_128(entry.name.as_bytes());
+                    let mut key = [0u8; 32];
+                    key[..16].copy_from_slice(&pallet_hash);
+                    key[16..].copy_from_slice(&entry_hash);
+
+                    if let Some(prev) = m.insert(key, (pallet.name.clone(), entry.name.clone())) {
+                        panic!(
+                            "twox128 collision for storage prefix: hash {} used by '{:?}' and '{:?}'",
+                            hex::encode(&key),
+                            prev,
+                            (pallet.name.clone(), entry.name.clone())
+                        );
+                    }
+                }
+            }
+        }
+        m
+    };
+}
+
+/// Helper: get pallet name from a raw storage key (first 16 bytes).
+pub fn pallet_name_from_key(key: &[u8]) -> Option<&'static str> {
+    if key.len() < 16 {
+        return None;
+    }
+    let mut pfx = [0u8; 16];
+    pfx.copy_from_slice(&key[..16]);
+    PALLET_PREFIX_TO_NAME.get(&pfx).map(|s| s.as_str())
+}
+
+/// Helper: get (pallet, storage) from a raw storage key (first 32 bytes).
+pub fn storage_names_from_key(key: &[u8]) -> Option<(&'static str, &'static str)> {
+    if key.len() < 32 {
+        return None;
+    }
+    let mut pfx = [0u8; 32];
+    pfx.copy_from_slice(&key[..32]);
+    STORAGE_PREFIX_TO_NAMES
+        .get(&pfx)
+        .map(|(p, s)| (p.as_str(), s.as_str()))
+}
+
+/// Returns Some(&str) if `bytes` are printable ASCII; otherwise None.
+/// "Printable" = ASCII graphic chars plus space/tab/newline/CR.
+/// Useful to show human-friendly keys when they were stored as plain text.
+pub fn ascii_str_if_printable(bytes: &[u8]) -> Option<&str> {
+    let printable = bytes.iter().all(|&b| is_printable_ascii(b));
+
+    if printable {
+        // SAFETY: printable ASCII is valid UTF-8
+        Some(std::str::from_utf8(bytes).unwrap())
+    } else {
+        None
+    }
+}
+
+fn is_printable_ascii(b: u8) -> bool {
+    // graphic ASCII (0x21..=0x7E)
+    b.is_ascii_graphic()
+        // plus common whitespace
+        || b == b' ' || b == b'\t' || b == b'\n' || b == b'\r'
+}
+
+/// Returns Some(&str) with the *leading* printable-ASCII prefix, or None if the first byte isn't printable.
+pub fn ascii_prefix_if_printable(bytes: &[u8], min_len: usize) -> Option<&str> {
+    let len = bytes.iter().take_while(|&&b| is_printable_ascii(b)).count();
+    if len == 0 || len < min_len {
+        return None;
+    }
+    // SAFETY: we only included ASCII bytes which are valid UTF-8.
+    Some(std::str::from_utf8(&bytes[..len]).unwrap())
+}
+
+pub fn unhash_storage_key(key: &[u8]) -> String {
+    if let Some((pallet_name, storage_name)) = storage_names_from_key(key) {
+        format!("{} {}", pallet_name, storage_name)
+    } else if let Some(pallet_name) = pallet_name_from_key(key) {
+        format!("{} {}", pallet_name, "<unknown>")
+    } else if let Some(ascii_str) = ascii_str_if_printable(key) {
+        // debug-escape so it is clear that this is a raw key (it will start with ")
+        format!("{:?}", ascii_str)
+    } else if let Some(ascii_str) = ascii_prefix_if_printable(key, 3) {
+        format!("{:?}...", ascii_str)
+    } else {
+        format!("<unknown>")
+    }
 }
 
 fn find_type_id(registry: &PortableRegistry, path_contains: &str) -> u32 {
@@ -986,7 +1104,9 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig>(data: &[u8]) {
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
 
-    let mut ext = TracingExt::new(ext);
+    // Using the fuzzer to check if we need to implement any extra Externalities methods,
+    // not using this for tracing.
+    //let mut ext = TracingExt::new(ext);
 
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();

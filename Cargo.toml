@@ -102,3 +102,7 @@ identity_op = { level = "allow", priority = 3 }
 manual_inspect = { level = "allow", priority = 3 }
 too-many-arguments = { level = "allow", priority = 3 }
 type_complexity = { level = "allow", priority = 3 }
+
+# to include line number in backtraces in release mode
+[profile.release]
+debug = 1

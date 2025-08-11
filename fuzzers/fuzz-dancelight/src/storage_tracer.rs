@@ -3,7 +3,7 @@ pub use crate::storage_tracer::tracing_externalities::TracingExt;
 use crate::storage_tracer::tracing_externalities::{ExtStorageTracer, ReadOrWrite};
 use crate::{
     CallableCallFor, ExtrOrPseudo, FuzzRuntimeCall, FuzzerConfig, get_origin,
-    recursively_find_call, root_can_call,
+    recursively_find_call, root_can_call, unhash_storage_key,
 };
 use dancelight_runtime::Session;
 use itertools::{EitherOrBoth, Itertools};
@@ -235,6 +235,7 @@ mod tracing_externalities {
     use sp_externalities::{Error, Extension, ExtensionStore, Externalities, MultiRemovalResults};
     use sp_storage::{ChildInfo, StateVersion, TrackedStorageKey};
     use std::any::{Any, TypeId};
+    use std::backtrace::Backtrace;
     use std::collections::HashSet;
 
     #[derive(Debug)]
@@ -258,6 +259,7 @@ mod tracing_externalities {
 
     impl Default for ExtStorageTracer {
         fn default() -> Self {
+            /*
             let whitelisted = HashSet::from_iter([
                 b":transaction_level:".to_vec(),
                 // MaintenanceMode MaintenanceMode
@@ -276,7 +278,14 @@ mod tracing_externalities {
                 // System ExecutionPhase
                 hex::decode("26aa394eea5630e07c48ae0c9558cef7ff553b5a9862a516939d82b3d3d8661a")
                     .unwrap(),
+                // custom prefix for relay_dispatch_queue_size
+                // annoying because it cannot be decoded from metadata, so ignore it
+                // it is a storage map so the last bytes can be different, but this one is the most common
+                hex::decode("f5207f03cfdce586301014700e2c2593fad157e461d71fd4c1f936839a5f1f3eb4def25cfda6ef3a00000000").unwrap(),
             ]);
+             */
+            // Do not use whitelist
+            let whitelisted = Default::default();
 
             Self {
                 trace: Default::default(),
@@ -290,6 +299,13 @@ mod tracing_externalities {
             if self.whitelisted.contains(key.as_ref()) {
                 return;
             }
+
+            /*
+            // Backtrace works, and shows line numbers if compiled with debug = 1
+            let backtrace = Backtrace::force_capture();
+            println!("mark_read: {}", backtrace);
+            */
+
             self.trace.push(ReadOrWrite::Read(key.into()));
         }
         fn mark_write<K: Into<Vec<u8>> + AsRef<[u8]> + std::hash::Hash + Eq, V: Into<Vec<u8>>>(
@@ -300,6 +316,20 @@ mod tracing_externalities {
             if self.whitelisted.contains(key.as_ref()) {
                 return;
             }
+
+            /*
+            #[deprecated = "Use `relay_dispatch_queue_remaining_capacity` instead"]
+            pub fn relay_dispatch_queue_size(para_id: Id) -> Vec<u8> {
+                let prefix = hex!["f5207f03cfdce586301014700e2c2593fad157e461d71fd4c1f936839a5f1f3e"];
+             */
+            /*
+            if hex::encode(key.as_ref()).starts_with("f5207f03cfdce586301014700e2c2593fad") {
+                //panic!("look at backtrace")
+                let backtrace = Backtrace::force_capture();
+                println!("write to f5207f03cfdce586301014700e2c2593fad: {}", backtrace);
+            }
+             */
+
             match val {
                 Some(val) => self.trace.push(ReadOrWrite::Write(key.into(), val.into())),
                 None => self.trace.push(ReadOrWrite::Remove(key.into())),
@@ -693,13 +723,60 @@ impl StorageTracer {
 
             println!("{heading}");
             for (key, count) in topk.iter() {
-                println!("{:>8}  {}", count, hex::encode(key));
+                println!("{:>8}  {}", count, unhash_storage_key(key));
+                println!("          {}", hex::encode(key));
             }
         }
 
         print_top(&self.top_reads, "Top 10 reads");
         println!();
         print_top(&self.top_writes, "Top 10 writes");
+    }
+
+    pub fn print_all_keys_alphabetical(&self) {
+        let mut h = HashMap::new();
+
+        h.extend(self.top_reads.keys().map(|k| (k, "R ")));
+        for k in self.top_writes.keys() {
+            let old = h.insert(k, " W");
+            if old.is_some() {
+                h.insert(k, "RW");
+            }
+        }
+
+        let mut v: Vec<((String, String), &'static str)> = h
+            .into_iter()
+            .map(|(k, v)| {
+                let mut pretty_key = unhash_storage_key(k);
+                fn trim_32(k: &[u8]) -> &[u8] {
+                    if k.len() > 32 { &k[..32] } else { k }
+                }
+                ((pretty_key, format!("0x{}", hex::encode(trim_32(k)))), v)
+            })
+            .collect();
+
+        v.sort();
+
+        fn merge_vals<'a>(a: &'a str, b: &'a str) -> &'a str {
+            // Possible values: "R ", " W", "RW"
+            // If the values are equal return one of them, done.
+            // If the values are different, then at least one of them is R and at least one of them
+            // is W, so the merged is RW
+            if a == b { a } else { "RW" }
+        }
+
+        v.dedup_by(|a, b| {
+            if a.0 == b.0 {
+                a.1 = merge_vals(a.1, b.1); // mutate the first value
+                true // drop `b`
+            } else {
+                false
+            }
+        });
+
+        for ((k1, k2), v) in v {
+            println!("{} {:48} {}", v, k1, k2);
+        }
     }
 }
 

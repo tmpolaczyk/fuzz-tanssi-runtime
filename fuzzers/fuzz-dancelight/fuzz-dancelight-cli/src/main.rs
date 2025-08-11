@@ -127,6 +127,8 @@ fn main() -> Result<()> {
 
                 let storage_tracer = STORAGE_TRACER.lock().unwrap();
                 storage_tracer.print_histograms();
+                println!();
+                storage_tracer.print_all_keys_alphabetical();
 
                 Ok(())
             } else {
