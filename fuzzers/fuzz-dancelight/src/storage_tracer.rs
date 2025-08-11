@@ -1,9 +1,10 @@
 use crate::create_storage::ext_to_simple_storage;
+use crate::metadata::unhash_storage_key;
 pub use crate::storage_tracer::tracing_externalities::TracingExt;
 use crate::storage_tracer::tracing_externalities::{ExtStorageTracer, ReadOrWrite};
 use crate::{
     CallableCallFor, ExtrOrPseudo, FuzzRuntimeCall, FuzzerConfig, get_origin,
-    recursively_find_call, root_can_call, unhash_storage_key,
+    recursively_find_call, root_can_call,
 };
 use dancelight_runtime::Session;
 use itertools::{EitherOrBoth, Itertools};
