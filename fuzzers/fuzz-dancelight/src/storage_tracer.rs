@@ -2,10 +2,7 @@ use crate::create_storage::ext_to_simple_storage;
 use crate::metadata::unhash_storage_key;
 pub use crate::storage_tracer::tracing_externalities::TracingExt;
 use crate::storage_tracer::tracing_externalities::{ExtStorageTracer, ReadOrWrite};
-use crate::{
-    CallableCallFor, ExtrOrPseudo, FuzzRuntimeCall, FuzzerConfig, get_origin,
-    recursively_find_call, root_can_call,
-};
+use crate::{CallableCallFor, ExtrOrPseudo, FuzzRuntimeCall, FuzzerConfig, get_origin, recursively_find_call, root_can_call, is_disabled_call};
 use dancelight_runtime::Session;
 use itertools::{EitherOrBoth, Itertools};
 use libfuzzer_sys::arbitrary;
@@ -793,45 +790,13 @@ impl StorageTracer {
 /// Start fuzzing a snapshot of a live network.
 /// This doesn't run `on_initialize` and `on_finalize`, everything is executed inside the same block.
 /// Inherents are also not tested, the snapshot is created after the inherents.
-pub fn trace_storage<FC: FuzzerConfig>(data: &[u8], storage_tracer: &mut StorageTracer) {
+pub fn trace_storage<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8], storage_tracer: &mut StorageTracer) {
     //println!("data: {:?}", data);
     let mut extrinsic_data = data;
     //#[allow(deprecated)]
     let mut extrinsics: Vec<ExtrOrPseudo> =
         iter::from_fn(|| DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
-            .filter(|x| match x {
-                ExtrOrPseudo::Extr(x) => !recursively_find_call(x.clone(), |call| {
-                    // We filter out calls with Fungible(0) as they cause a debug crash
-                    /*
-                     matches!(call.clone(), RuntimeCall::XcmPallet(pallet_xcm::Call::execute { message, .. })
-                         if matches!(message.as_ref(), staging_xcm::VersionedXcm::V2(staging_xcm::v2::Xcm(msg))
-                             if msg.iter().any(|m| matches!(m, staging_xcm::opaque::v2::prelude::BuyExecution { fees: staging_xcm::v2::MultiAsset { fun, .. }, .. }
-                                 if fun == &staging_xcm::v2::Fungibility::Fungible(0)
-                             )
-                         )) || matches!(message.as_ref(), staging_xcm::VersionedXcm::V3(staging_xcm::v3::Xcm(msg))
-                             if msg.iter().any(|m| matches!(m, staging_xcm::opaque::v3::prelude::BuyExecution { weight_limit: staging_xcm::opaque::v3::WeightLimit::Limited(weight), .. }
-                                 if weight.ref_time() <= 1
-                             ))
-                         )
-                     )
-                     || matches!(call.clone(), RuntimeCall::XcmPallet(pallet_xcm::Call::transfer_assets_using_type_and_then { assets, ..})
-                         if staging_xcm::v2::MultiAssets::try_from(*assets.clone())
-                             .map(|assets| assets.inner().iter().any(|a| matches!(a, staging_xcm::v2::MultiAsset { fun, .. }
-                                 if fun == &staging_xcm::v2::Fungibility::Fungible(0)
-                             ))).unwrap_or(false)
-                     )
-                    */
-                    matches!(call.clone(), RuntimeCall::System(_))
-                        || matches!(
-                    &call,
-                    RuntimeCall::Referenda(CallableCallFor::<dancelight_runtime::Referenda>::submit {
-                        proposal_origin: matching_origin,
-                        ..
-                    }) if RuntimeOrigin::from(*matching_origin.clone()).caller() == RuntimeOrigin::root().caller()
-                )
-                }),
-                ExtrOrPseudo::Pseudo(x) => true,
-            })
+            .filter(FC::extrinsics_filter)
             .collect();
 
     if extrinsics.is_empty() {
