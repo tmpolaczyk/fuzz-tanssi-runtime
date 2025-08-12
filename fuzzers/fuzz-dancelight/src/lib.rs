@@ -885,135 +885,50 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
         // Origin is kind of like a state machine
         // By default we try using Alice, and if we get Err::BadOrigin, we check if root_can_call
         // that extrinsic, and if so retry as root
-        let mut origin = 0;
-        let mut origin_retry_as_root = true;
-        let mut origin_try_root_first = false;
+        let mut origin_sm = OriginStateMachine::new();
 
         //let mut seen_values = SeenValues::default();
         //test_mutate(&mut extrinsics, &mut seen_values);
 
         for extrinsic in extrinsics {
-            // Only create 1 block, do not even finalize it
             match extrinsic {
                 ExtrOrPseudo::Extr(extrinsic) => {
-                    /*
-                    weight.saturating_accrue(extrinsic.get_dispatch_info().call_weight);
-                    weight.saturating_accrue(extrinsic.get_dispatch_info().extension_weight);
-                    if weight.ref_time() >= 2 * WEIGHT_REF_TIME_PER_SECOND {
-                        log::warn!("Extrinsic would exhaust block weight, skipping");
-                        continue;
-                    }
-                     */
-                    // Ignore weight because we will be executing all extrinsics in the same block.
-                    // But detect expensive extrinsics that take the whole block.
-                    // I tried to panic but there are many edge cases here:
-                    // * Disabled extrinsics return a big weight, not u64::MAX, but some random big number different for each extrinsic.
-                    //   Examples: set_hrmp_open_request_ttl, force_process_hrmp_close
-                    // * Parametric weights can easily overflow. For example, if the weight depends on some param n, and we set n = 1_000_000,
-                    //   then the weight will be a million times greater than expected. So in practice this extrinsic cannot be called with this
-                    //   arg, so we must skip it here. An example is `RuntimeCall::FellowshipCollective(Call::remove_member {..})`
                     let eww = extrinsic.get_dispatch_info();
                     if eww.call_weight.ref_time() + eww.extension_weight.ref_time()
                         >= 2 * WEIGHT_REF_TIME_PER_SECOND
-                    /*&&
-                    match &extrinsic {
-                        // Whitelist some extrinsics with big weights
-                        RuntimeCall::Configuration(runtime_parachains::configuration::Call::set_hrmp_open_request_ttl { .. }) => false,
-                        RuntimeCall::Hrmp(CallableCallFor::<dancelight_runtime::Hrmp>::force_process_hrmp_close { .. }) => false,
-                        // I guess everything under HRMP is disabled
-                        RuntimeCall::Hrmp(..) => false,
-                        _ => true,
-                    }*/
                     {
-                        //log::error!(target: "fuzz::call", "    call:       {extrinsic:?}");
-                        //panic!("Extrinsic would exhaust block weight");
+                        // This extrinsic weight is greater than the allowed block weight.
+                        // This is normal, it can happen for:
+                        // * Disabled extrinsics. When an extrinsic benchmark fails, its weight is set
+                        //   to a high value to effectively disable it.
+                        // * High input params. Some extrinsics have a weight that depends on some
+                        //   input. If we set that input to u32::MAX, the weight will also probably be
+                        //   u32::MAX. So we ignore this call.
+                        //log::warn!("Extrinsic would exhaust block weight, skipping");
                         continue;
                     }
 
-                    let mut origin_is_root = false;
-                    let origin_u8 = origin;
-                    let origin = if origin == 0 {
-                        // Check if this extrinsic can be called by root, if not return a Signed origin
-                        if origin_try_root_first && root_can_call(&extrinsic) {
-                            origin_is_root = true;
+                    for origin in origin_sm.get_origins(&extrinsic) {
+                        log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
+                        log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
 
-                            RuntimeOrigin::root()
-                        } else {
-                            RuntimeOrigin::signed(get_origin(origin.into()).clone())
-                        }
-                    } else {
-                        RuntimeOrigin::signed(get_origin(origin.into()).clone())
-                    };
+                        let now = Instant::now(); // We get the current time for timing purposes.
+                        #[allow(unused_variables)]
+                        let res = extrinsic.clone().dispatch(origin.clone());
+                        elapsed += now.elapsed();
 
-                    log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
-                    log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
+                        log::debug!(target: "fuzz::result", "    result:     {}", format_dispatch_result(&res));
 
-                    let now = Instant::now(); // We get the current time for timing purposes.
-                    #[allow(unused_variables)]
-                    let mut res = extrinsic.clone().dispatch(origin.clone());
-                    elapsed += now.elapsed();
-
-                    if origin_retry_as_root {
                         if let Err(e) = &res {
                             if let DispatchError::BadOrigin = &e.error {
-                                // Retry using a different origin
-                                let origin = if origin_is_root {
-                                    // First we tried as root, now retry as signed origin
-                                    Some(RuntimeOrigin::signed(
-                                        get_origin(origin_u8.into()).clone(),
-                                    ))
-                                } else {
-                                    // Retry as root if allowed
-                                    if root_can_call(&extrinsic) {
-                                        Some(RuntimeOrigin::root())
-                                    } else {
-                                        // If not allowed, do not retry
-                                        None
-                                    }
-                                };
-                                if let Some(origin) = origin {
-                                    log::debug!(target: "fuzz::result", "    result:     {}", match &res {
-                                        Ok(x) => {
-                                            if let Some(w) = x.actual_weight {
-                                                format!("Ok {{ actual_weight: {:?} }}", w)
-                                            } else {
-                                                format!("Ok {{ }}")
-                                            }
-                                        }
-                                        Err(e) => {
-                                            if let Some(w) = e.post_info.actual_weight {
-                                                format!("Err {{ error: {:?}, actual_weight: {:?} }}", e.error, w)
-                                            } else {
-                                                format!("Err {{ error: {:?} }}", e.error)
-                                            }
-                                        }
-                                    });
-
-                                    log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
-                                    log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
-
-                                    res = extrinsic.clone().dispatch(origin);
-                                }
+                                // BadOrigin: retry with next origin
+                                continue;
                             }
                         }
+
+                        // By default only try one origin, unless the error is BadOrigin
+                        break;
                     }
-
-                    log::debug!(target: "fuzz::result", "    result:     {}", match &res {
-                        Ok(x) => {
-                            if let Some(w) = x.actual_weight {
-                                format!("Ok {{ actual_weight: {:?} }}", w)
-                            } else {
-                                format!("Ok {{ }}")
-                            }
-                        }
-                        Err(e) => {
-                            if let Some(w) = e.post_info.actual_weight {
-                                format!("Err {{ error: {:?}, actual_weight: {:?} }}", e.error, w)
-                            } else {
-                                format!("Err {{ error: {:?} }}", e.error)
-                            }
-                        }
-                    });
                 }
                 ExtrOrPseudo::Pseudo(fuzz_call) => {
                     match fuzz_call {
@@ -1022,9 +937,9 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
                             retry_as_root,
                             try_root_first,
                         } => {
-                            origin = new_origin;
-                            origin_retry_as_root = retry_as_root;
-                            origin_try_root_first = try_root_first;
+                            origin_sm.origin = new_origin;
+                            origin_sm.retry_as_root = retry_as_root;
+                            origin_sm.try_root_first = try_root_first;
                         }
                         // Set relay data and start a new block
                         FuzzRuntimeCall::SetRelayData(x) => {
