@@ -2,7 +2,10 @@ use crate::create_storage::ext_to_simple_storage;
 use crate::metadata::unhash_storage_key;
 pub use crate::storage_tracer::tracing_externalities::TracingExt;
 use crate::storage_tracer::tracing_externalities::{ExtStorageTracer, ReadOrWrite};
-use crate::{CallableCallFor, ExtrOrPseudo, FuzzRuntimeCall, FuzzerConfig, get_origin, recursively_find_call, root_can_call, is_disabled_call};
+use crate::{
+    CallableCallFor, ExtrOrPseudo, FuzzRuntimeCall, FuzzerConfig, get_origin, is_disabled_call,
+    recursively_find_call, root_can_call,
+};
 use dancelight_runtime::Session;
 use itertools::{EitherOrBoth, Itertools};
 use libfuzzer_sys::arbitrary;
@@ -790,7 +793,10 @@ impl StorageTracer {
 /// Start fuzzing a snapshot of a live network.
 /// This doesn't run `on_initialize` and `on_finalize`, everything is executed inside the same block.
 /// Inherents are also not tested, the snapshot is created after the inherents.
-pub fn trace_storage<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8], storage_tracer: &mut StorageTracer) {
+pub fn trace_storage<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(
+    data: &[u8],
+    storage_tracer: &mut StorageTracer,
+) {
     //println!("data: {:?}", data);
     let mut extrinsic_data = data;
     //#[allow(deprecated)]
@@ -805,106 +811,7 @@ pub fn trace_storage<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8],
 
     //println!("{:?}", extrinsics);
 
-    let mut block: u32 = 1;
-    let mut weight: Weight = Weight::zero();
     let mut elapsed: Duration = Duration::ZERO;
-    let mut block_rewards: Cell<u128> = Cell::new(0);
-    let mut last_era: Cell<u32> = Cell::new(0);
-
-    let initialize_block = |block: u32| {
-        log::debug!(target: "fuzz::initialize", "\ninitializing block {block}");
-
-        let validators = dancelight_runtime::Session::validators();
-        let slot = Slot::from(u64::from(block + 350000000));
-        let authority_index =
-            u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
-        let pre_digest = Digest {
-            logs: vec![DigestItem::PreRuntime(
-                BABE_ENGINE_ID,
-                PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
-                    slot,
-                    authority_index,
-                })
-                .encode(),
-            )],
-        };
-
-        let grandparent_header = Header::new(
-            block,
-            H256::default(),
-            H256::default(),
-            <frame_system::Pallet<Runtime>>::parent_hash(),
-            pre_digest.clone(),
-        );
-
-        let parent_header = Header::new(
-            block,
-            H256::default(),
-            H256::default(),
-            grandparent_header.hash(),
-            pre_digest,
-        );
-
-        // Calculate max expected supply increase
-        {
-            let registered_para_ids = ContainerRegistrar::registered_para_ids();
-            if !registered_para_ids.is_empty() {
-                let new_supply_inflation_rewards =
-                    CollatorsInflationRatePerBlock::get() * Balances::total_issuance();
-                block_rewards.set(block_rewards.get() + new_supply_inflation_rewards);
-            }
-
-            if last_era.get() == 0 {
-                let era_index = ExternalValidators::current_era().unwrap();
-                last_era.set(era_index);
-            }
-            let era_index = ExternalValidators::current_era().unwrap();
-            let mut new_era = false;
-            if era_index > last_era.get() {
-                new_era = true;
-            }
-            if new_era {
-                let new_supply_validators =
-                    ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
-                block_rewards.set(block_rewards.get() + new_supply_validators);
-            }
-        }
-
-        Executive::initialize_block(&parent_header);
-
-        Timestamp::set(
-            RuntimeOrigin::none(),
-            u64::from(block) * SLOT_DURATION + 2_100_000_000_000,
-        )
-        .unwrap();
-
-        Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
-            CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data {
-                data: (),
-            },
-        )))
-        .unwrap()
-        .unwrap();
-
-        ParaInherent::enter(
-            RuntimeOrigin::none(),
-            primitives::vstaging::InherentData {
-                parent_header: grandparent_header,
-                backed_candidates: Vec::default(),
-                bitfields: Vec::default(),
-                disputes: Vec::default(),
-            },
-        )
-        .unwrap();
-    };
-
-    let finalize_block = |elapsed: Duration| {
-        log::debug!(target: "fuzz::time", "\n  time spent: {elapsed:?}");
-        assert!(elapsed.as_secs() <= 2, "block execution took too much time");
-
-        log::debug!(target: "fuzz::finalize", "  finalizing block");
-        Executive::finalize_block();
-    };
 
     use sp_runtime::traits::BlakeTwo256;
     use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};

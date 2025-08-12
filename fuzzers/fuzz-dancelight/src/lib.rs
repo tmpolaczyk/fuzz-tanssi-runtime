@@ -6,13 +6,13 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
-use dancelight_runtime::Session;
+use dancelight_runtime::{Session, System};
+use frame_support::dispatch::DispatchResultWithPostInfo;
+use frame_support::traits::CallerTrait;
 use itertools::{EitherOrBoth, Itertools};
 use libfuzzer_sys::arbitrary;
 use libfuzzer_sys::arbitrary::{Arbitrary, Unstructured};
 use std::collections::HashMap;
-use frame_support::dispatch::DispatchResultWithPostInfo;
-use frame_support::traits::CallerTrait;
 use {
     cumulus_primitives_core::ParaId,
     dancelight_runtime::{
@@ -462,7 +462,7 @@ mod read_snapshot {
 
 fn genesis_storage_from_snapshot() -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
     const EXPORTED_STATE_CHAIN_SPEC_JSON: &[u8] =
-        include_bytes!("../../../snapshots/dancelight-2025-08-07.json");
+        include_bytes!("../../../snapshots/dancelight-2025-08-12.json");
 
     read_snapshot::read_snapshot(EXPORTED_STATE_CHAIN_SPEC_JSON)
 }
@@ -471,7 +471,7 @@ fn genesis_storage_from_snapshot() -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCa
 // "local" network.
 fn genesis_storage_from_zombienet() -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
     const ZOMBIENET_STATE_CHAIN_SPEC_JSON: &[u8] = include_bytes!(
-        "../../../snapshots/zombienet-dancelight-ed2538bb631060008e140a9a9308712073b57897.json"
+        "../../../snapshots/zombienet-dancelight-a1f0612013506d77c22e2afb87a56b447e603572-before-oninitialize.json"
     );
 
     read_snapshot::read_snapshot(ZOMBIENET_STATE_CHAIN_SPEC_JSON)
@@ -552,11 +552,11 @@ pub enum ExtrOrPseudo {
 use crate::create_storage::ext_to_simple_storage;
 use crate::genesis::invulnerables_from_seeds;
 use crate::metadata::{ACCOUNT_ID_TYPE_ID, METADATA, RUNTIME_CALL_TYPE_ID};
+use crate::simple_backend::SimpleBackend;
 use crate::storage_tracer::TracingExt;
+use crate::without_storage_root::WithoutStorageRoot;
 use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
 use parity_scale_codec::WrapperTypeDecode;
-use crate::simple_backend::SimpleBackend;
-use crate::without_storage_root::WithoutStorageRoot;
 
 struct PanicOnError;
 
@@ -820,12 +820,12 @@ pub fn is_disabled_call(x: &RuntimeCall) -> bool {
         */
         matches!(call.clone(), RuntimeCall::System(_))
             || matches!(
-                    &call,
-                    RuntimeCall::Referenda(CallableCallFor::<dancelight_runtime::Referenda>::submit {
-                        proposal_origin: matching_origin,
-                        ..
-                    }) if RuntimeOrigin::from(*matching_origin.clone()).caller().is_root()
-                )
+                &call,
+                RuntimeCall::Referenda(CallableCallFor::<dancelight_runtime::Referenda>::submit {
+                    proposal_origin: matching_origin,
+                    ..
+                }) if RuntimeOrigin::from(*matching_origin.clone()).caller().is_root()
+            )
     })
 }
 
@@ -848,7 +848,7 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
     //#[allow(deprecated)]
     let mut extrinsics: Vec<ExtrOrPseudo> =
         iter::from_fn(|| DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
-        .filter(FC::extrinsics_filter)
+            .filter(FC::extrinsics_filter)
             .collect();
 
     if extrinsics.is_empty() {
@@ -856,107 +856,7 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
     }
 
     //println!("{:?}", extrinsics);
-
-    let mut block: u32 = 1;
-    let mut weight: Weight = Weight::zero();
-    let mut elapsed: Duration = Duration::ZERO;
-    let mut block_rewards: Cell<u128> = Cell::new(0);
-    let mut last_era: Cell<u32> = Cell::new(0);
-
-    let initialize_block = |block: u32| {
-        log::debug!(target: "fuzz::initialize", "\ninitializing block {block}");
-
-        let validators = dancelight_runtime::Session::validators();
-        let slot = Slot::from(u64::from(block + 350000000));
-        let authority_index =
-            u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
-        let pre_digest = Digest {
-            logs: vec![DigestItem::PreRuntime(
-                BABE_ENGINE_ID,
-                PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
-                    slot,
-                    authority_index,
-                })
-                .encode(),
-            )],
-        };
-
-        let grandparent_header = Header::new(
-            block,
-            H256::default(),
-            H256::default(),
-            <frame_system::Pallet<Runtime>>::parent_hash(),
-            pre_digest.clone(),
-        );
-
-        let parent_header = Header::new(
-            block,
-            H256::default(),
-            H256::default(),
-            grandparent_header.hash(),
-            pre_digest,
-        );
-
-        // Calculate max expected supply increase
-        {
-            let registered_para_ids = ContainerRegistrar::registered_para_ids();
-            if !registered_para_ids.is_empty() {
-                let new_supply_inflation_rewards =
-                    CollatorsInflationRatePerBlock::get() * Balances::total_issuance();
-                block_rewards.set(block_rewards.get() + new_supply_inflation_rewards);
-            }
-
-            if last_era.get() == 0 {
-                let era_index = ExternalValidators::current_era().unwrap();
-                last_era.set(era_index);
-            }
-            let era_index = ExternalValidators::current_era().unwrap();
-            let mut new_era = false;
-            if era_index > last_era.get() {
-                new_era = true;
-            }
-            if new_era {
-                let new_supply_validators =
-                    ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
-                block_rewards.set(block_rewards.get() + new_supply_validators);
-            }
-        }
-
-        Executive::initialize_block(&parent_header);
-
-        Timestamp::set(
-            RuntimeOrigin::none(),
-            u64::from(block) * SLOT_DURATION + 2_100_000_000_000,
-        )
-        .unwrap();
-
-        Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
-            CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data {
-                data: (),
-            },
-        )))
-        .unwrap()
-        .unwrap();
-
-        ParaInherent::enter(
-            RuntimeOrigin::none(),
-            primitives::vstaging::InherentData {
-                parent_header: grandparent_header,
-                backed_candidates: Vec::default(),
-                bitfields: Vec::default(),
-                disputes: Vec::default(),
-            },
-        )
-        .unwrap();
-    };
-
-    let finalize_block = |elapsed: Duration| {
-        log::debug!(target: "fuzz::time", "\n  time spent: {elapsed:?}");
-        assert!(elapsed.as_secs() <= 2, "block execution took too much time");
-
-        log::debug!(target: "fuzz::finalize", "  finalizing block");
-        Executive::finalize_block();
-    };
+    let mut elapsed = Duration::ZERO;
 
     use sp_runtime::traits::BlakeTwo256;
     use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
@@ -1178,10 +1078,26 @@ pub struct BlockState {
     elapsed: Duration,
     block_rewards: u128,
     last_era: u32,
+    num_created_blocks: u32,
+}
+
+impl BlockState {
+    pub fn initial() -> Self {
+        Self {
+            block: 1,
+            slot: 1,
+            weight: Weight::zero(),
+            elapsed: Duration::ZERO,
+            block_rewards: 0,
+            last_era: 0,
+            num_created_blocks: 0,
+        }
+    }
 }
 
 pub fn initialize_block(state: &mut BlockState) {
     state.block += 1;
+    state.num_created_blocks += 1;
     state.weight = Weight::zero();
     state.elapsed = Duration::ZERO;
 
@@ -1189,8 +1105,7 @@ pub fn initialize_block(state: &mut BlockState) {
 
     let validators = dancelight_runtime::Session::validators();
     let authority_index =
-        u32::try_from(u64::from(state.slot) % u64::try_from(validators.len()).unwrap())
-            .unwrap();
+        u32::try_from(u64::from(state.slot) % u64::try_from(validators.len()).unwrap()).unwrap();
     let pre_digest = Digest {
         logs: vec![DigestItem::PreRuntime(
             BABE_ENGINE_ID,
@@ -1198,7 +1113,7 @@ pub fn initialize_block(state: &mut BlockState) {
                 slot: Slot::from(state.slot),
                 authority_index,
             })
-                .encode(),
+            .encode(),
         )],
     };
 
@@ -1249,12 +1164,10 @@ pub fn initialize_block(state: &mut BlockState) {
     state.slot += 1;
 
     Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
-        CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data {
-            data: (),
-        },
+        CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data { data: () },
     )))
-        .unwrap()
-        .unwrap();
+    .unwrap()
+    .unwrap();
 
     ParaInherent::enter(
         RuntimeOrigin::none(),
@@ -1265,12 +1178,15 @@ pub fn initialize_block(state: &mut BlockState) {
             disputes: Vec::default(),
         },
     )
-        .unwrap();
+    .unwrap();
 }
 
 pub fn finalize_block(state: &mut BlockState) {
     log::debug!(target: "fuzz::time", "\n  time spent: {:?}", state.elapsed);
-    assert!(state.elapsed.as_secs() <= 2, "block execution took too much time");
+    assert!(
+        state.elapsed.as_secs() <= 2,
+        "block execution took too much time"
+    );
 
     log::debug!(target: "fuzz::finalize", "  finalizing block");
     Executive::finalize_block();
@@ -1311,7 +1227,9 @@ impl OriginStateMachine {
         } else {
             if self.try_root_first {
                 // we already tried root, now try signed origin
-                Some(RuntimeOrigin::signed(get_origin(self.origin.into()).clone()))
+                Some(RuntimeOrigin::signed(
+                    get_origin(self.origin.into()).clone(),
+                ))
             } else {
                 // now try root
                 Some(RuntimeOrigin::root())
@@ -1320,9 +1238,8 @@ impl OriginStateMachine {
     }
 
     pub fn get_origins(&self, extrinsic: &RuntimeCall) -> impl Iterator<Item = RuntimeOrigin> {
-        std::iter::once(self.first_origin(extrinsic)).chain(
-            std::iter::once_with(|| self.second_origin(extrinsic)).flatten(),
-        )
+        std::iter::once(self.first_origin(extrinsic))
+            .chain(std::iter::once_with(|| self.second_origin(extrinsic)).flatten())
     }
 }
 
@@ -1363,14 +1280,7 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
 
     //println!("{:?}", extrinsics);
 
-    let mut block_state = BlockState {
-        block: 1,
-        slot: 1,
-        weight: Weight::zero(),
-        elapsed: Duration::ZERO,
-        block_rewards: 0,
-        last_era: 0,
-    };
+    let mut block_state = BlockState::initial();
 
     use sp_runtime::traits::BlakeTwo256;
 
@@ -1392,6 +1302,11 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
 
+        block_state.block = System::block_number();
+        let last_timestamp = pallet_timestamp::Now::<Runtime>::get();
+        // Technically this should be last_timestamp / slot_duration, but this also works
+        block_state.slot = last_timestamp;
+
         initialize_block(&mut block_state);
 
         // Origin is kind of like a state machine
@@ -1403,7 +1318,7 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
         //test_mutate(&mut extrinsics, &mut seen_values);
 
         for extrinsic in extrinsics {
-            if block_state.block >= 200 {
+            if block_state.num_created_blocks >= 200 {
                 // Hard limit of 200 blocks, hopefully its enough to test all the Era stuff
                 assert!(block_state.last_era > 2, "{:?}", block_state.last_era);
                 break;
@@ -1412,7 +1327,8 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
                 ExtrOrPseudo::Extr(extrinsic) => {
                     let eww = extrinsic.get_dispatch_info();
                     if eww.call_weight.ref_time() + eww.extension_weight.ref_time()
-                        >= 2 * WEIGHT_REF_TIME_PER_SECOND {
+                        >= 2 * WEIGHT_REF_TIME_PER_SECOND
+                    {
                         // This extrinsic weight is greater than the allowed block weight.
                         // This is normal, it can happen for:
                         // * Disabled extrinsics. When an extrinsic benchmark fails, its weight is set
@@ -1526,12 +1442,17 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
 
         finalize_block(&mut block_state);
         // Disabled this to improve performance
-        check_invariants(block_state.block, initial_total_issuance, block_state.block_rewards);
+        check_invariants(
+            block_state.block,
+            initial_total_issuance,
+            block_state.block_rewards,
+        );
         // Assert that it is not possible to mint tokens using the allowed extrinsics
         let final_total_issuance = TotalIssuance::<Runtime>::get();
         // Some extrinsics burn tokens so final issuance can be lower
         assert!(
-            initial_total_issuance.saturating_add(block_state.block_rewards) >= final_total_issuance,
+            initial_total_issuance.saturating_add(block_state.block_rewards)
+                >= final_total_issuance,
             "{} >= {}",
             initial_total_issuance,
             final_total_issuance
@@ -1549,106 +1470,7 @@ pub fn update_snapshot_after_on_initialize(
 ) {
     FUZZ_MAIN_CALLED.store(true, std::sync::atomic::Ordering::SeqCst);
 
-    let mut block: u32 = 1;
-    let mut weight: Weight = Weight::zero();
-    let mut elapsed: Duration = Duration::ZERO;
-    let mut block_rewards: Cell<u128> = Cell::new(0);
-    let mut last_era: Cell<u32> = Cell::new(0);
-
-    let initialize_block = |block: u32| {
-        log::debug!(target: "fuzz::initialize", "\ninitializing block {block}");
-
-        let validators = dancelight_runtime::Session::validators();
-        let slot = Slot::from(u64::from(block + 350000000));
-        let authority_index =
-            u32::try_from(u64::from(slot) % u64::try_from(validators.len()).unwrap()).unwrap();
-        let pre_digest = Digest {
-            logs: vec![DigestItem::PreRuntime(
-                BABE_ENGINE_ID,
-                PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
-                    slot,
-                    authority_index,
-                })
-                .encode(),
-            )],
-        };
-
-        let grandparent_header = Header::new(
-            block,
-            H256::default(),
-            H256::default(),
-            <frame_system::Pallet<Runtime>>::parent_hash(),
-            pre_digest.clone(),
-        );
-
-        let parent_header = Header::new(
-            block,
-            H256::default(),
-            H256::default(),
-            grandparent_header.hash(),
-            pre_digest,
-        );
-
-        // Calculate max expected supply increase
-        {
-            let registered_para_ids = ContainerRegistrar::registered_para_ids();
-            if !registered_para_ids.is_empty() {
-                let new_supply_inflation_rewards =
-                    CollatorsInflationRatePerBlock::get() * Balances::total_issuance();
-                block_rewards.set(block_rewards.get() + new_supply_inflation_rewards);
-            }
-
-            if last_era.get() == 0 {
-                let era_index = ExternalValidators::current_era().unwrap();
-                last_era.set(era_index);
-            }
-            let era_index = ExternalValidators::current_era().unwrap();
-            let mut new_era = false;
-            if era_index > last_era.get() {
-                new_era = true;
-            }
-            if new_era {
-                let new_supply_validators =
-                    ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
-                block_rewards.set(block_rewards.get() + new_supply_validators);
-            }
-        }
-
-        Executive::initialize_block(&parent_header);
-
-        Timestamp::set(
-            RuntimeOrigin::none(),
-            u64::from(block) * SLOT_DURATION + 2_100_000_000_000,
-        )
-        .unwrap();
-
-        Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
-            CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data {
-                data: (),
-            },
-        )))
-        .unwrap()
-        .unwrap();
-
-        ParaInherent::enter(
-            RuntimeOrigin::none(),
-            primitives::vstaging::InherentData {
-                parent_header: grandparent_header,
-                backed_candidates: Vec::default(),
-                bitfields: Vec::default(),
-                disputes: Vec::default(),
-            },
-        )
-        .unwrap();
-    };
-
-    let finalize_block = |elapsed: Duration| {
-        log::debug!(target: "fuzz::time", "\n  time spent: {elapsed:?}");
-        assert!(elapsed.as_secs() <= 2, "block execution took too much time");
-
-        log::debug!(target: "fuzz::finalize", "  finalizing block");
-        Executive::finalize_block();
-    };
+    let mut block_state = BlockState::initial();
 
     use sp_runtime::traits::BlakeTwo256;
 
@@ -1670,18 +1492,18 @@ pub fn update_snapshot_after_on_initialize(
             std::{fs::File, io::Write},
         };
 
+        block_state.block = System::block_number();
+        let last_timestamp = pallet_timestamp::Now::<Runtime>::get();
+        // Technically this should be last_timestamp / slot_duration, but this also works
+        block_state.slot = last_timestamp;
+
         // If need to export storage, it means that the snapshot is not stored after on_initialize
-        initialize_block(block);
+        initialize_block(&mut block_state);
 
         // Create up to 100 blocks to ensure migrations have finished
         for _ in 0..100 {
-            finalize_block(elapsed);
-
-            block += 1;
-            weight = 0.into();
-            elapsed = Duration::ZERO;
-
-            initialize_block(block);
+            finalize_block(&mut block_state);
+            initialize_block(&mut block_state);
 
             if MultiBlockMigrations::ongoing() == false {
                 break;

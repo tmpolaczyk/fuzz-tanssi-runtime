@@ -22,6 +22,7 @@ libfuzzer-sys = { workspace = true, features = [ "arbitrary-derive" ] }
 log = { workspace = true }
 nimbus-primitives = { workspace = true }
 pallet-balances = { workspace = true }
+pallet-timestamp = { workspace = true }
 pallet-configuration = { workspace = true }
 parity-scale-codec = { workspace = true, features = [ "derive", "max-encoded-len" ] }
 polkadot-core-primitives = { workspace = true }

@@ -2908,6 +2908,7 @@ dependencies = [
  "nimbus-primitives",
  "pallet-balances",
  "pallet-configuration",
+ "pallet-timestamp",
  "parity-scale-codec",
  "polkadot-core-primitives",
  "polkadot-primitives",

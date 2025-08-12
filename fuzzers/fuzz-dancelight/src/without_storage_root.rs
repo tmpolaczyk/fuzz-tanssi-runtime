@@ -8,9 +8,7 @@ pub struct WithoutStorageRoot<T> {
 
 impl<T> WithoutStorageRoot<T> {
     pub fn new(inner: T) -> Self {
-        Self {
-            inner,
-        }
+        Self { inner }
     }
 }
 
@@ -58,11 +56,7 @@ impl<T: Externalities> Externalities for WithoutStorageRoot<T> {
         self.inner.next_storage_key(key)
     }
 
-    fn next_child_storage_key(
-        &mut self,
-        child_info: &ChildInfo,
-        key: &[u8],
-    ) -> Option<Vec<u8>> {
+    fn next_child_storage_key(&mut self, child_info: &ChildInfo, key: &[u8]) -> Option<Vec<u8>> {
         self.inner.next_child_storage_key(child_info, key)
     }
 
@@ -72,7 +66,8 @@ impl<T: Externalities> Externalities for WithoutStorageRoot<T> {
         maybe_limit: Option<u32>,
         maybe_cursor: Option<&[u8]>,
     ) -> MultiRemovalResults {
-        self.inner.kill_child_storage(child_info, maybe_limit, maybe_cursor)
+        self.inner
+            .kill_child_storage(child_info, maybe_limit, maybe_cursor)
     }
 
     fn clear_prefix(
@@ -91,7 +86,8 @@ impl<T: Externalities> Externalities for WithoutStorageRoot<T> {
         maybe_limit: Option<u32>,
         maybe_cursor: Option<&[u8]>,
     ) -> MultiRemovalResults {
-        self.inner.clear_child_prefix(child_info, prefix, maybe_limit, maybe_cursor)
+        self.inner
+            .clear_child_prefix(child_info, prefix, maybe_limit, maybe_cursor)
     }
 
     fn place_storage(&mut self, key: Vec<u8>, value: Option<Vec<u8>>) {
@@ -114,7 +110,13 @@ impl<T: Externalities> Externalities for WithoutStorageRoot<T> {
         // and this should just call self.inner as usual
 
         // Mock storage root using block number
-        let block_number = self.inner.storage(&hex::decode("26aa394eea5630e07c48ae0c9558cef702a5c1b19ab7a04f536c519aca4983ac").unwrap()).unwrap();
+        let block_number = self
+            .inner
+            .storage(
+                &hex::decode("26aa394eea5630e07c48ae0c9558cef702a5c1b19ab7a04f536c519aca4983ac")
+                    .unwrap(),
+            )
+            .unwrap();
         assert_eq!(block_number.len(), 4);
 
         let mut mocked: Vec<u8> = format!("__FUZZ_MOCK_STORAGE_ROOT_").into();

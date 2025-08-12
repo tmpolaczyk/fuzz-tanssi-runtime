@@ -1,9 +1,12 @@
-use std::ops::Bound::{Excluded, Included, Unbounded};
-use std::sync::Arc;
 use parity_scale_codec::Encode;
 use sp_core::{Blake2Hasher, Hasher};
-use sp_state_machine::{Backend, BackendTransaction, IterArgs, StateMachineStats, StorageIterator, StorageKey, StorageValue, TrieBackendStorage, UsageInfo};
+use sp_state_machine::{
+    Backend, BackendTransaction, IterArgs, StateMachineStats, StorageIterator, StorageKey,
+    StorageValue, TrieBackendStorage, UsageInfo,
+};
 use sp_storage::{ChildInfo, StateVersion, Storage};
+use std::ops::Bound::{Excluded, Included, Unbounded};
+use std::sync::Arc;
 use trie_db::{DBValue, MerkleValue, TrieDBRawIterator};
 
 pub struct SimpleBackend {
@@ -24,9 +27,12 @@ impl core::fmt::Debug for SimpleBackend {
 
 pub struct NoTrieBackendStorage;
 
-
 impl<H: Hasher> TrieBackendStorage<H> for NoTrieBackendStorage {
-    fn get(&self, key: &H::Out, prefix: (&[u8], std::option::Option<u8>)) -> Result<Option<DBValue>, sp_state_machine::DefaultError> {
+    fn get(
+        &self,
+        key: &H::Out,
+        prefix: (&[u8], std::option::Option<u8>),
+    ) -> Result<Option<DBValue>, sp_state_machine::DefaultError> {
         todo!()
     }
 }
@@ -55,13 +61,17 @@ impl<H: Hasher> StorageIterator<H> for SimpleBackendRawIter {
     type Error = String;
 
     fn next_key(&mut self, backend: &Self::Backend) -> Option<Result<StorageKey, Self::Error>> {
-        <SimpleBackendRawIter as StorageIterator<H>>::next_pair(self, backend).map(|r| r.map(|(k, _)| k))
+        <SimpleBackendRawIter as StorageIterator<H>>::next_pair(self, backend)
+            .map(|r| r.map(|(k, _)| k))
     }
 
-    fn next_pair(&mut self, backend: &Self::Backend) -> Option<Result<(StorageKey, StorageValue), Self::Error>> {
+    fn next_pair(
+        &mut self,
+        backend: &Self::Backend,
+    ) -> Option<Result<(StorageKey, StorageValue), Self::Error>> {
         //println!("next_pair: {:?}", self);
         if !matches!(self.state, IterState::Pending) {
-            return None
+            return None;
         }
 
         if self.key_next.is_none() {
@@ -96,7 +106,7 @@ impl<H: Hasher> StorageIterator<H> for SimpleBackendRawIter {
         // And update prefix to the current key excluded bound
         self.key_next = Some((k.clone(), true));
 
-        return Some(Ok((k.to_vec(), v.to_vec())))
+        return Some(Ok((k.to_vec(), v.to_vec())));
     }
 
     fn was_complete(&self) -> bool {
@@ -121,36 +131,66 @@ impl<H: Hasher> Backend<H> for SimpleBackend {
         todo!()
     }
 
-    fn child_closest_merkle_value(&self, child_info: &ChildInfo, key: &[u8]) -> Result<Option<MerkleValue<H::Out>>, Self::Error> {
+    fn child_closest_merkle_value(
+        &self,
+        child_info: &ChildInfo,
+        key: &[u8],
+    ) -> Result<Option<MerkleValue<H::Out>>, Self::Error> {
         todo!()
     }
 
-    fn child_storage(&self, child_info: &ChildInfo, key: &[u8]) -> Result<Option<StorageValue>, Self::Error> {
+    fn child_storage(
+        &self,
+        child_info: &ChildInfo,
+        key: &[u8],
+    ) -> Result<Option<StorageValue>, Self::Error> {
         todo!()
     }
 
-    fn child_storage_hash(&self, child_info: &ChildInfo, key: &[u8]) -> Result<Option<H::Out>, Self::Error> {
+    fn child_storage_hash(
+        &self,
+        child_info: &ChildInfo,
+        key: &[u8],
+    ) -> Result<Option<H::Out>, Self::Error> {
         todo!()
     }
 
     fn next_storage_key(&self, key: &[u8]) -> Result<Option<StorageKey>, Self::Error> {
-        Ok(self.base.top.range::<[u8], _>((Excluded(key), Unbounded)).next().map(|(k, _)| k.to_vec()))
+        Ok(self
+            .base
+            .top
+            .range::<[u8], _>((Excluded(key), Unbounded))
+            .next()
+            .map(|(k, _)| k.to_vec()))
     }
 
-    fn next_child_storage_key(&self, child_info: &ChildInfo, key: &[u8]) -> Result<Option<StorageKey>, Self::Error> {
+    fn next_child_storage_key(
+        &self,
+        child_info: &ChildInfo,
+        key: &[u8],
+    ) -> Result<Option<StorageKey>, Self::Error> {
         todo!()
     }
 
-    fn storage_root<'a>(&self, delta: impl Iterator<Item=(&'a [u8], Option<&'a [u8]>)>, state_version: StateVersion) -> (H::Out, BackendTransaction<H>)
+    fn storage_root<'a>(
+        &self,
+        delta: impl Iterator<Item = (&'a [u8], Option<&'a [u8]>)>,
+        state_version: StateVersion,
+    ) -> (H::Out, BackendTransaction<H>)
     where
-        H::Out: Ord
+        H::Out: Ord,
     {
         todo!()
     }
 
-    fn child_storage_root<'a>(&self, child_info: &ChildInfo, delta: impl Iterator<Item=(&'a [u8], Option<&'a [u8]>)>, state_version: StateVersion) -> (H::Out, bool, BackendTransaction<H>)
+    fn child_storage_root<'a>(
+        &self,
+        child_info: &ChildInfo,
+        delta: impl Iterator<Item = (&'a [u8], Option<&'a [u8]>)>,
+        state_version: StateVersion,
+    ) -> (H::Out, bool, BackendTransaction<H>)
     where
-        H::Out: Ord
+        H::Out: Ord,
     {
         todo!()
     }
@@ -174,20 +214,25 @@ impl<H: Hasher> Backend<H> for SimpleBackend {
          */
 
         /*
-            let prefix = args.prefix.as_deref().unwrap_or(&[]);
-            if let Some(start_at) = args.start_at {
-                TrieDBRawIterator::new_prefixed_then_seek(db, prefix, &start_at)
-            } else {
-                TrieDBRawIterator::new_prefixed(db, prefix)
-            }
+           let prefix = args.prefix.as_deref().unwrap_or(&[]);
+           if let Some(start_at) = args.start_at {
+               TrieDBRawIterator::new_prefixed_then_seek(db, prefix, &start_at)
+           } else {
+               TrieDBRawIterator::new_prefixed(db, prefix)
+           }
 
-         */
+        */
 
         Ok(SimpleBackendRawIter {
             stop_on_incomplete_database: args.stop_on_incomplete_database,
             child_info: args.child_info,
             prefix: args.prefix.map(|x| x.to_vec()).unwrap_or(vec![]),
-            key_next: Some((args.start_at.map(|key| key.to_vec()).unwrap_or_else(|| args.prefix.map(|x| x.to_vec()).unwrap_or(vec![])), args.start_at_exclusive)),
+            key_next: Some((
+                args.start_at
+                    .map(|key| key.to_vec())
+                    .unwrap_or_else(|| args.prefix.map(|x| x.to_vec()).unwrap_or(vec![])),
+                args.start_at_exclusive,
+            )),
             state: IterState::Pending,
         })
     }
