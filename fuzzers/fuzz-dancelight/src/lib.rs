@@ -11,7 +11,7 @@ use crate::create_storage::ext_to_simple_storage;
 use crate::genesis::invulnerables_from_seeds;
 use crate::metadata::{ACCOUNT_ID_TYPE_ID, METADATA, RUNTIME_CALL_TYPE_ID};
 use crate::simple_backend::SimpleBackend;
-use crate::storage_tracer::TracingExt;
+use crate::storage_tracer::{BlockContext, ExtStorageTracer, TracingExt};
 use crate::without_storage_root::WithoutStorageRoot;
 use dancelight_runtime::{Session, System};
 use frame_support::dispatch::DispatchResultWithPostInfo;
@@ -633,6 +633,8 @@ pub fn initialize_block(state: &mut BlockState) {
 
     log::debug!(target: "fuzz::initialize", "\ninitializing block {}", state.block);
 
+    ExtStorageTracer::set_block_context(BlockContext::OnInitialize);
+
     let validators = dancelight_runtime::Session::validators();
     let authority_index =
         u32::try_from(u64::from(state.slot) % u64::try_from(validators.len()).unwrap()).unwrap();
@@ -690,6 +692,8 @@ pub fn initialize_block(state: &mut BlockState) {
 
     Executive::initialize_block(&parent_header);
 
+    ExtStorageTracer::set_block_context(BlockContext::Inherents);
+
     Timestamp::set(RuntimeOrigin::none(), state.slot * SLOT_DURATION).unwrap();
     state.slot += 1;
 
@@ -719,6 +723,8 @@ pub fn finalize_block(state: &mut BlockState) {
     );
 
     log::debug!(target: "fuzz::finalize", "  finalizing block");
+    ExtStorageTracer::set_block_context(BlockContext::OnFinalize);
+
     Executive::finalize_block();
 }
 
@@ -854,6 +860,12 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
                     for origin in origin_sm.get_origins(&extrinsic) {
                         log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
                         log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
+
+                        if origin.caller.is_root() {
+                            ExtStorageTracer::set_block_context(BlockContext::ExtrinsicRoot);
+                        } else {
+                            ExtStorageTracer::set_block_context(BlockContext::ExtrinsicSigned);
+                        }
 
                         let now = Instant::now(); // We get the current time for timing purposes.
                         #[allow(unused_variables)]
@@ -1020,6 +1032,12 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
 
                         log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
                         log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
+
+                        if origin.caller.is_root() {
+                            ExtStorageTracer::set_block_context(BlockContext::ExtrinsicRoot);
+                        } else {
+                            ExtStorageTracer::set_block_context(BlockContext::ExtrinsicSigned);
+                        }
 
                         let now = Instant::now(); // We get the current time for timing purposes.
                         #[allow(unused_variables)]

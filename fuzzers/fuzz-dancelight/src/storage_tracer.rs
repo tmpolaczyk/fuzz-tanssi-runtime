@@ -1,6 +1,6 @@
 use crate::metadata::unhash_storage_key;
+use crate::storage_tracer::tracing_externalities::ReadOrWrite;
 pub use crate::storage_tracer::tracing_externalities::TracingExt;
-use crate::storage_tracer::tracing_externalities::{ExtStorageTracer, ReadOrWrite};
 use many_to_many::ManyToMany;
 use std::collections::HashMap;
 use std::{cmp::max, sync::Arc};
@@ -160,12 +160,45 @@ mod many_to_many {
     }
 }
 
+pub use tracing_externalities::BlockContext;
+pub use tracing_externalities::ExtStorageTracer;
 mod tracing_externalities {
     use sp_externalities::{Error, Extension, ExtensionStore, Externalities, MultiRemovalResults};
     use sp_storage::{ChildInfo, StateVersion, TrackedStorageKey};
     use std::any::{Any, TypeId};
     use std::backtrace::Backtrace;
     use std::collections::HashSet;
+
+    #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+    pub enum BlockContext {
+        OnInitialize,
+        Inherents,
+        ExtrinsicSigned,
+        ExtrinsicRoot,
+        OnFinalize,
+    }
+
+    impl BlockContext {
+        pub fn from_u8(x: u8) -> Self {
+            match x {
+                0 => BlockContext::OnInitialize,
+                1 => BlockContext::Inherents,
+                2 => BlockContext::ExtrinsicSigned,
+                3 => BlockContext::ExtrinsicRoot,
+                4 => BlockContext::OnFinalize,
+                _ => panic!("invalid value for BlockContext: {}", x),
+            }
+        }
+        pub fn to_u8(self) -> u8 {
+            match self {
+                BlockContext::OnInitialize => 0,
+                BlockContext::Inherents => 1,
+                BlockContext::ExtrinsicSigned => 2,
+                BlockContext::ExtrinsicRoot => 3,
+                BlockContext::OnFinalize => 4,
+            }
+        }
+    }
 
     #[derive(Debug)]
     pub enum ReadOrWrite {
@@ -178,6 +211,7 @@ mod tracing_externalities {
         StartTransaction,
         RollbackTransaction,
         CommitTransaction,
+        ChangeContext(BlockContext),
     }
 
     #[derive(Debug)]
@@ -224,6 +258,12 @@ mod tracing_externalities {
     }
 
     impl ExtStorageTracer {
+        pub fn set_block_context(block_context: BlockContext) {
+            frame_support::storage::unhashed::put_raw(
+                b"__FUZZ_TRACER_BLOCK_CONTEXT",
+                &[block_context.to_u8()],
+            );
+        }
         fn mark_read<K: Into<Vec<u8>> + AsRef<[u8]> + std::hash::Hash + Eq>(
             &mut self,
             key: K,
@@ -305,6 +345,9 @@ mod tracing_externalities {
         fn storage_commit_transaction(&mut self) {
             self.trace.push(ReadOrWrite::CommitTransaction);
         }
+        fn change_block_context(&mut self, ctx: BlockContext) {
+            self.trace.push(ReadOrWrite::ChangeContext(ctx));
+        }
         pub fn print_summary(&self) {
             for x in &self.trace {
                 match x {
@@ -343,6 +386,9 @@ mod tracing_externalities {
                     }
                     ReadOrWrite::CommitTransaction => {
                         println!("COMMIT TRANSACTION");
+                    }
+                    ReadOrWrite::ChangeContext(_) => {
+                        // We could print some headers, but not needed for now
                     }
                 }
             }
@@ -471,6 +517,11 @@ mod tracing_externalities {
         }
 
         fn place_storage(&mut self, key: Vec<u8>, value: Option<Vec<u8>>) {
+            if key.as_slice() == b"__FUZZ_TRACER_BLOCK_CONTEXT" {
+                let x = value.unwrap()[0];
+                self.tracer.change_block_context(BlockContext::from_u8(x));
+                return;
+            }
             // TODO: writes need to detect if we are inside a transaction, as those writes will rollback so they are not real writes...
             let vref = match &value {
                 Some(x) => Some(x.as_slice()),
@@ -559,6 +610,10 @@ pub struct StorageTracer {
     top_reads: HashMap<Vec<u8>, u32>,
     // histogram of key => num_writes
     top_writes: HashMap<Vec<u8>, u32>,
+    // histogram of key => num_reads
+    top_reads_by_ctx: HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
+    // histogram of key => num_writes
+    top_writes_by_ctx: HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
     // histogram of key => size_of_biggest_write
     biggest_reads: HashMap<Vec<u8>, u32>,
     // histogram of key => size_of_biggest_write
@@ -628,42 +683,82 @@ impl StorageTracer {
     }
 
     pub fn update_histograms(&mut self, ext_tracer: &ExtStorageTracer) {
+        let mut current_context = BlockContext::OnInitialize;
         for x in ext_tracer.trace.iter() {
             match x {
                 ReadOrWrite::Read(key, size) => {
                     *self.top_reads.entry(key.clone()).or_insert(0) += 1;
+                    *self
+                        .top_reads_by_ctx
+                        .entry(current_context)
+                        .or_default()
+                        .entry(key.clone())
+                        .or_insert(0) += 1;
                     let bw = self.biggest_reads.entry(key.clone()).or_insert(0);
                     *bw = max(*bw, *size as u32);
                 }
                 ReadOrWrite::Write(key, value) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                    *self
+                        .top_writes_by_ctx
+                        .entry(current_context)
+                        .or_default()
+                        .entry(key.clone())
+                        .or_insert(0) += 1;
                     let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
                     *bw = max(*bw, value.len() as u32);
                 }
                 ReadOrWrite::Remove(key) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                    *self
+                        .top_writes_by_ctx
+                        .entry(current_context)
+                        .or_default()
+                        .entry(key.clone())
+                        .or_insert(0) += 1;
                     let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
                     *bw = max(*bw, 0);
                 }
                 ReadOrWrite::Append(key, value) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                    *self
+                        .top_writes_by_ctx
+                        .entry(current_context)
+                        .or_default()
+                        .entry(key.clone())
+                        .or_insert(0) += 1;
                     let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
                     // TODO: append could maybe be size = size + new, but not sure
                     *bw = max(*bw, value.len() as u32);
                 }
                 ReadOrWrite::KillPrefix(key) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                    *self
+                        .top_writes_by_ctx
+                        .entry(current_context)
+                        .or_default()
+                        .entry(key.clone())
+                        .or_insert(0) += 1;
                     let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
                     *bw = max(*bw, 0);
                 }
                 ReadOrWrite::KillPrefixPartial(key, _) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                    *self
+                        .top_writes_by_ctx
+                        .entry(current_context)
+                        .or_default()
+                        .entry(key.clone())
+                        .or_insert(0) += 1;
                     let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
                     *bw = max(*bw, 0);
                 }
                 ReadOrWrite::StartTransaction => {}
                 ReadOrWrite::RollbackTransaction => {}
                 ReadOrWrite::CommitTransaction => {}
+                ReadOrWrite::ChangeContext(ctx) => {
+                    current_context = ctx.clone();
+                }
             }
         }
     }
@@ -705,6 +800,91 @@ impl StorageTracer {
             &self.biggest_writes,
             "Top biggest storage writes in bytes",
             3,
+        );
+    }
+
+    /// Like `print_histograms`, but shows per-context RW flags for each key
+    /// in a fixed order: [OnInitialize, Inherents, ExtrinsicSigned, ExtrinsicRoot, OnFinalize].
+    pub fn print_histograms_by_context(&self) {
+        use BlockContext::{ExtrinsicRoot, ExtrinsicSigned, Inherents, OnFinalize, OnInitialize};
+
+        const ORDER: [BlockContext; 5] = [
+            OnInitialize,
+            Inherents,
+            ExtrinsicSigned,
+            ExtrinsicRoot,
+            OnFinalize,
+        ];
+
+        fn tokens_line(
+            key: &[u8],
+            order: &[BlockContext; 5],
+            rb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
+            wb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
+        ) -> String {
+            order
+                .iter()
+                .map(|ctx| {
+                    let r = rb.get(ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
+                    let w = wb.get(ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
+                    let rch = if r > 0 { 'R' } else { '-' };
+                    let wch = if w > 0 { 'W' } else { '-' };
+                    format!("{}{}", rch, wch)
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        }
+
+        fn print_top_with_context(
+            flat: &HashMap<Vec<u8>, u32>,
+            order: &[BlockContext; 5],
+            rb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
+            wb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
+            heading: &str,
+            top_k: usize,
+        ) {
+            let mut items: Vec<(&[u8], u32)> =
+                flat.iter().map(|(k, &v)| (k.as_slice(), v)).collect();
+
+            if items.is_empty() {
+                println!("<empty>");
+                return;
+            }
+
+            let k = top_k.min(items.len());
+            let nth_index = items.len() - k;
+            items.select_nth_unstable_by(nth_index, |a, b| {
+                a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0))
+            });
+            let topk = &mut items[nth_index..];
+            topk.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+            println!("{heading}");
+            println!("Legend per context [Init Inh Sig Root Fin]: R=read, W=write, -=none");
+            for (key, count) in topk.iter() {
+                let tokens = tokens_line(key, order, rb, wb);
+                // 14 = 5 tokens * 2 chars + 4 spaces between them
+                println!("{:<14} {:>8}  {}", tokens, count, unhash_storage_key(key));
+                println!("{:>14}      {}", "", hex::encode(key));
+            }
+        }
+
+        print_top_with_context(
+            &self.top_reads,
+            &ORDER,
+            &self.top_reads_by_ctx,
+            &self.top_writes_by_ctx,
+            "Top most frequent reads (with per-context RW presence)",
+            6,
+        );
+        println!();
+        print_top_with_context(
+            &self.top_writes,
+            &ORDER,
+            &self.top_reads_by_ctx,
+            &self.top_writes_by_ctx,
+            "Top most frequent writes (with per-context RW presence)",
+            6,
         );
     }
 
@@ -751,6 +931,104 @@ impl StorageTracer {
 
         for ((k1, k2), v) in v {
             println!("{} {:48} {}", v, k1, k2);
+        }
+    }
+
+    /// Alphabetical listing of all keys with per-context RW flags.
+    /// Context order: [OnInitialize, Inherents, ExtrinsicSigned, ExtrinsicRoot, OnFinalize].
+    pub fn print_all_keys_alphabetical_by_context(&self) {
+        use BlockContext::{ExtrinsicRoot, ExtrinsicSigned, Inherents, OnFinalize, OnInitialize};
+        const ORDER: [BlockContext; 5] = [
+            OnInitialize,
+            Inherents,
+            ExtrinsicSigned,
+            ExtrinsicRoot,
+            OnFinalize,
+        ];
+
+        fn trim_32(k: &[u8]) -> &[u8] {
+            if k.len() > 32 { &k[..32] } else { k }
+        }
+
+        fn tokens_for_key(
+            key: &[u8],
+            order: &[BlockContext; 5],
+            rb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
+            wb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
+        ) -> String {
+            order
+                .iter()
+                .map(|ctx| {
+                    let r = rb.get(ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
+                    let w = wb.get(ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
+                    let rch = if r > 0 { 'R' } else { '-' };
+                    let wch = if w > 0 { 'W' } else { '-' };
+                    format!("{}{}", rch, wch)
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        }
+
+        fn merge_tokens(a: &str, b: &str) -> String {
+            // Merge "TT TT TT TT TT" element-wise (R/W union, '-' otherwise).
+            let mut out = String::new();
+            let mut ta = a.split_whitespace();
+            let mut tb = b.split_whitespace();
+            for i in 0..5 {
+                let aa = ta.next().unwrap_or("--").as_bytes();
+                let bb = tb.next().unwrap_or("--").as_bytes();
+                let r = (aa.get(0) == Some(&b'R')) || (bb.get(0) == Some(&b'R'));
+                let w = (aa.get(1) == Some(&b'W')) || (bb.get(1) == Some(&b'W'));
+                if i > 0 {
+                    out.push(' ');
+                }
+                out.push(if r { 'R' } else { '-' });
+                out.push(if w { 'W' } else { '-' });
+            }
+            out
+        }
+
+        // Build entries from the union of keys seen anywhere.
+        let mut v: Vec<((String, String), String)> = Vec::new();
+        let mut push_key = |k: &Vec<u8>| {
+            let tokens = tokens_for_key(k, &ORDER, &self.top_reads_by_ctx, &self.top_writes_by_ctx);
+            let pretty = unhash_storage_key(k);
+            let hex32 = format!("0x{}", hex::encode(trim_32(k)));
+            v.push(((pretty, hex32), tokens));
+        };
+
+        for k in self.top_reads.keys() {
+            push_key(k);
+        }
+        for k in self.top_writes.keys() {
+            push_key(k);
+        }
+        for m in self.top_reads_by_ctx.values() {
+            for k in m.keys() {
+                push_key(k);
+            }
+        }
+        for m in self.top_writes_by_ctx.values() {
+            for k in m.keys() {
+                push_key(k);
+            }
+        }
+
+        // Sort and merge display-collisions.
+        v.sort();
+        v.dedup_by(|a, b| {
+            if a.0 == b.0 {
+                a.1 = merge_tokens(&a.1, &b.1);
+                true
+            } else {
+                false
+            }
+        });
+
+        println!("Legend per context [Init Inh Sig Root Fin]: R=read, W=write, -=none");
+        for ((k1, k2), tokens) in v {
+            // 14 = "RW RW RW RW RW"
+            println!("{:<14} {:56} {}", tokens, k1, k2);
         }
     }
 }
