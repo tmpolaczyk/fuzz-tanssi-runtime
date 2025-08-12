@@ -1,9 +1,9 @@
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use fuzz_dancelight::{
-    ExtrOrPseudo, FuzzLiveOneblock, FuzzZombie, STORAGE_TRACER, StorageTracer, TraceStorage,
-    extrinsics_iter, fuzz_decode_calls, fuzz_init, fuzz_init_only_logger, fuzz_live_oneblock,
-    fuzz_zombie,
+    EVENT_TRACER, EXTR_TRACER, ExtrOrPseudo, FuzzLiveOneblock, FuzzZombie, STORAGE_TRACER,
+    StorageTracer, TraceEvents, TraceStorage, extrinsics_iter, fuzz_decode_calls, fuzz_init,
+    fuzz_init_only_logger, fuzz_live_oneblock, fuzz_zombie,
 };
 use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
 use scale_info::TypeInfo;
@@ -66,23 +66,65 @@ enum Commands {
     },
 }
 
+fn init_and_get_fuzz_main(fuzz_target: &str) -> fn(&[u8]) {
+    match fuzz_target {
+        "fuzz_decode_calls" => fuzz_init_only_logger(),
+        "fuzz_live_oneblock" => fuzz_init::<FuzzLiveOneblock>(),
+        "fuzz_zombie" => fuzz_init::<FuzzZombie>(),
+        _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
+    };
+
+    let fuzz_main = match fuzz_target {
+        "fuzz_decode_calls" => fuzz_decode_calls,
+        "fuzz_live_oneblock" => fuzz_live_oneblock::<FuzzLiveOneblock>,
+        "fuzz_zombie" => fuzz_zombie::<FuzzZombie>,
+        _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
+    };
+
+    fuzz_main
+}
+
+fn init_and_get_fuzz_main_trace_storage(fuzz_target: &str) -> fn(&[u8]) {
+    match fuzz_target {
+        "fuzz_decode_calls" => fuzz_init_only_logger(),
+        "fuzz_live_oneblock" => fuzz_init::<TraceStorage<FuzzLiveOneblock>>(),
+        "fuzz_zombie" => fuzz_init::<TraceStorage<FuzzZombie>>(),
+        _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
+    };
+
+    let fuzz_main = match fuzz_target {
+        "fuzz_decode_calls" => fuzz_decode_calls,
+        "fuzz_live_oneblock" => fuzz_live_oneblock::<TraceStorage<FuzzLiveOneblock>>,
+        "fuzz_zombie" => fuzz_zombie::<TraceStorage<FuzzZombie>>,
+        _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
+    };
+
+    fuzz_main
+}
+
+fn init_and_get_fuzz_main_trace_events(fuzz_target: &str) -> fn(&[u8]) {
+    match fuzz_target {
+        "fuzz_decode_calls" => fuzz_init_only_logger(),
+        "fuzz_live_oneblock" => fuzz_init::<TraceEvents<FuzzLiveOneblock>>(),
+        "fuzz_zombie" => fuzz_init::<TraceEvents<FuzzZombie>>(),
+        _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
+    };
+
+    let fuzz_main = match fuzz_target {
+        "fuzz_decode_calls" => fuzz_decode_calls,
+        "fuzz_live_oneblock" => fuzz_live_oneblock::<TraceEvents<FuzzLiveOneblock>>,
+        "fuzz_zombie" => fuzz_zombie::<TraceEvents<FuzzZombie>>,
+        _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
+    };
+
+    fuzz_main
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::ExecuteCorpus { fuzz_target } => {
-            match fuzz_target.as_str() {
-                "fuzz_decode_calls" => fuzz_init_only_logger(),
-                "fuzz_live_oneblock" => fuzz_init::<FuzzLiveOneblock>(),
-                "fuzz_zombie" => fuzz_init::<FuzzZombie>(),
-                _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
-            };
-
-            let fuzz_main = match fuzz_target.as_str() {
-                "fuzz_decode_calls" => fuzz_decode_calls,
-                "fuzz_live_oneblock" => fuzz_live_oneblock::<FuzzLiveOneblock>,
-                "fuzz_zombie" => fuzz_zombie::<FuzzZombie>,
-                _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
-            };
+            let fuzz_main = init_and_get_fuzz_main(fuzz_target.as_str());
             coverage::execute_corpus(&fuzz_target, fuzz_main);
             Ok(())
         }
@@ -93,25 +135,22 @@ fn main() -> Result<()> {
         } => {
             assert_eq!(input_path, None, "unimplemented");
             assert_eq!(corpus_path, None, "unimplemented");
-            match fuzz_target.as_str() {
-                "fuzz_decode_calls" => fuzz_init_only_logger(),
-                "fuzz_live_oneblock" => fuzz_init::<TraceStorage<FuzzLiveOneblock>>(),
-                "fuzz_zombie" => fuzz_init::<TraceStorage<FuzzZombie>>(),
-                _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
-            };
-
-            let fuzz_main = match fuzz_target.as_str() {
-                "fuzz_decode_calls" => fuzz_decode_calls,
-                "fuzz_live_oneblock" => fuzz_live_oneblock::<TraceStorage<FuzzLiveOneblock>>,
-                "fuzz_zombie" => fuzz_zombie::<TraceStorage<FuzzZombie>>,
-                _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
-            };
+            let fuzz_main = init_and_get_fuzz_main_trace_events(fuzz_target.as_str());
             coverage::execute_corpus(&fuzz_target, fuzz_main);
 
+            println!("EVENTS");
+            let event_tracer = EVENT_TRACER.lock().unwrap();
+            event_tracer.print_events();
+            println!("");
+            println!("SUCCESSFUL EXTRINSICS");
+            let extr_tracer = EXTR_TRACER.lock().unwrap();
+            extr_tracer.print_ok_extrs();
+            /*
             let storage_tracer = STORAGE_TRACER.lock().unwrap();
             storage_tracer.print_histograms_by_context();
             println!();
             storage_tracer.print_all_keys_alphabetical_by_context();
+             */
 
             Ok(())
         }

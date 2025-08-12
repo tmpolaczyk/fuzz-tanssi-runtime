@@ -9,7 +9,9 @@
 use crate::create_storage::create_storage;
 use crate::create_storage::ext_to_simple_storage;
 use crate::genesis::invulnerables_from_seeds;
-use crate::metadata::{ACCOUNT_ID_TYPE_ID, METADATA, RUNTIME_CALL_TYPE_ID};
+use crate::metadata::{
+    ACCOUNT_ID_TYPE_ID, METADATA, RUNTIME_CALL_TYPE_ID, call_name_from_idx, event_name_from_idx,
+};
 use crate::simple_backend::SimpleBackend;
 use crate::storage_tracer::{BlockContext, ExtStorageTracer, TracingExt};
 use crate::without_storage_root::WithoutStorageRoot;
@@ -70,6 +72,8 @@ use {
 };
 
 mod create_storage;
+mod event_tracer;
+mod extr_tracer;
 mod genesis;
 mod metadata;
 mod mutators;
@@ -79,6 +83,8 @@ mod without_storage_root;
 mod simple_backend;
 mod storage_tracer;
 
+use crate::event_tracer::EventTracer;
+use crate::extr_tracer::ExtrTracer;
 pub use storage_tracer::StorageTracer;
 
 type CallableCallFor<A, R = Runtime> = CallableCallForG<A, R>;
@@ -395,7 +401,8 @@ pub trait FuzzerConfig {
 
     fn externalities_parts() -> Self::ExternalitiesParts;
     fn ext_new(parts: &mut Self::ExternalitiesParts) -> Self::Ext<'_>;
-    fn after_ext(ext: Self::Ext<'_>) {}
+    fn after_each_extr(extrinsic: &RuntimeCall, num_events_before: &mut usize, extr_ok: bool) {}
+    fn after_all(ext: Self::Ext<'_>) {}
 }
 
 pub struct TraceStorage<FC: FuzzerConfig>(FC);
@@ -403,6 +410,12 @@ pub struct TraceStorage<FC: FuzzerConfig>(FC);
 lazy_static::lazy_static! {
     pub static ref STORAGE_TRACER: Arc<Mutex<StorageTracer>> = {
         Arc::new(Mutex::new(StorageTracer::default()))
+    };
+    pub static ref EVENT_TRACER: Arc<Mutex<EventTracer>> = {
+        Arc::new(Mutex::new(EventTracer::default()))
+    };
+    pub static ref EXTR_TRACER: Arc<Mutex<ExtrTracer>> = {
+        Arc::new(Mutex::new(ExtrTracer::default()))
     };
 }
 
@@ -431,11 +444,87 @@ impl<FC: FuzzerConfig> FuzzerConfig for TraceStorage<FC> {
         let ext = FC::ext_new(parts);
         TracingExt::new(ext)
     }
-    fn after_ext(ext: Self::Ext<'_>) {
+    fn after_each_extr(extrinsic: &RuntimeCall, num_events_before: &mut usize, extr_ok: bool) {
+        FC::after_each_extr(extrinsic, num_events_before, extr_ok)
+    }
+    fn after_all(ext: Self::Ext<'_>) {
         let mut storage_tracer = STORAGE_TRACER.lock().unwrap();
         storage_tracer.update_histograms(&ext.tracer);
 
-        FC::after_ext(ext.into_inner())
+        FC::after_all(ext.into_inner())
+    }
+}
+
+pub struct TraceEvents<FC: FuzzerConfig>(FC);
+
+impl<FC: FuzzerConfig> FuzzerConfig for TraceEvents<FC> {
+    type ExtrOrPseudo = FC::ExtrOrPseudo;
+    type ExternalitiesParts = FC::ExternalitiesParts;
+    type Ext<'a> = TracingExt<FC::Ext<'a>>;
+
+    fn genesis_storage() -> &'static (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
+        FC::genesis_storage()
+    }
+
+    fn genesis_storage_simple() -> &'static Storage {
+        FC::genesis_storage_simple()
+    }
+
+    fn extrinsics_filter(x: &Self::ExtrOrPseudo) -> bool {
+        FC::extrinsics_filter(x)
+    }
+
+    fn externalities_parts() -> Self::ExternalitiesParts {
+        FC::externalities_parts()
+    }
+
+    fn ext_new(parts: &mut Self::ExternalitiesParts) -> Self::Ext<'_> {
+        let ext = FC::ext_new(parts);
+        TracingExt::new(ext)
+    }
+    fn after_each_extr(extrinsic: &RuntimeCall, num_events_before: &mut usize, extr_ok: bool) {
+        let events_all = System::events();
+        let (_, events) = events_all.split_at(*num_events_before);
+
+        if extr_ok == false {
+            // Extrinsics are transactional, so if the extr returned an error, it could not have
+            // emitted any events
+            assert!(events.is_empty(), "{:?}", events);
+            // So nothing to update here
+            return;
+        }
+        let events: Vec<_> = events.iter().map(|ev| &ev.event).collect();
+
+        {
+            let mut event_tracer = EVENT_TRACER.lock().unwrap();
+            for event in events {
+                let x_enc = event.encode();
+                let first_2_bytes = (x_enc[0], x_enc[1]);
+                event_tracer.insert(first_2_bytes, || {
+                    let evn_name = event_name_from_idx(first_2_bytes);
+                    //format!("{} {} {:?}", evn_name.0, evn_name.1, event)
+                    format!("{} {}", evn_name.0, evn_name.1)
+                });
+            }
+        }
+
+        *num_events_before = events_all.len();
+
+        if extr_ok {
+            let x_enc = extrinsic.encode();
+            let first_2_bytes = (x_enc[0], x_enc[1]);
+            let mut ok_extrinsics = EXTR_TRACER.lock().unwrap();
+            ok_extrinsics.insert(first_2_bytes, || {
+                let evn_name = call_name_from_idx(first_2_bytes);
+                //format!("{} {} {:?}", evn_name.0, evn_name.1, event)
+                format!("{} {}", evn_name.0, evn_name.1)
+            });
+        }
+
+        FC::after_each_extr(extrinsic, num_events_before, extr_ok)
+    }
+    fn after_all(ext: Self::Ext<'_>) {
+        FC::after_all(ext.into_inner())
     }
 }
 
@@ -846,10 +935,17 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
     let mut ext = FC::ext_new(&mut ext_parts);
 
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
-        let initial_total_issuance = TotalIssuance::<Runtime>::get();
-
         // The snapshot is saved after the initial on_initialize
         //initialize_block(block);
+
+        // Use lazy_static to cache values that don't depend on fuzzer input
+        lazy_static::lazy_static! {
+            static ref INITIAL_TOTAL_ISSUANCE: Balance = TotalIssuance::<Runtime>::get();
+            static ref NUM_EVENTS_BEFORE: usize = System::events().len();
+        }
+        let initial_total_issuance = *INITIAL_TOTAL_ISSUANCE;
+        let num_events_before = *NUM_EVENTS_BEFORE;
+        let mut num_events_before_inner = *NUM_EVENTS_BEFORE;
 
         // Origin is kind of like a state machine
         // By default we try using Alice, and if we get Err::BadOrigin, we check if root_can_call
@@ -877,6 +973,7 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
                         continue;
                     }
 
+                    let mut extr_ok = false;
                     for origin in origin_sm.get_origins(&extrinsic) {
                         log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
                         log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
@@ -891,6 +988,7 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
                         #[allow(unused_variables)]
                         let res = extrinsic.clone().dispatch(origin.clone());
                         elapsed += now.elapsed();
+                        extr_ok |= res.is_ok();
 
                         log::debug!(target: "fuzz::result", "    result:     {}", format_dispatch_result(&res));
 
@@ -904,6 +1002,8 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
                         // By default only try one origin, unless the error is BadOrigin
                         break;
                     }
+
+                    FC::after_each_extr(&extrinsic, &mut num_events_before_inner, extr_ok);
                 }
                 ExtrOrPseudo::Pseudo(fuzz_call) => {
                     match fuzz_call {
@@ -960,7 +1060,7 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
     });
 
     //ext.tracer.print_summary();
-    FC::after_ext(ext);
+    FC::after_all(ext);
 }
 
 /// Start fuzzing a genesis raw spec generated by zombienet.
@@ -1157,7 +1257,7 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
         );
     });
 
-    FC::after_ext(ext);
+    FC::after_all(ext);
 }
 
 /// Input: a chain state snapshot before on_initialize

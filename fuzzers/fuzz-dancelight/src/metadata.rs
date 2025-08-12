@@ -2,7 +2,8 @@ use dancelight_runtime::Runtime;
 use frame_metadata::v15::RuntimeMetadataV15;
 use frame_metadata::{RuntimeMetadata, RuntimeMetadataPrefixed};
 use parity_scale_codec::Decode;
-use scale_info::PortableRegistry;
+use scale_info::form::PortableForm;
+use scale_info::{PortableRegistry, TypeDef};
 use std::collections::HashMap;
 
 lazy_static::lazy_static! {
@@ -181,4 +182,71 @@ fn find_type_id(registry: &PortableRegistry, path_contains: &str) -> u32 {
     );
 
     found.into_iter().next().unwrap()
+}
+
+fn event_or_call_name_from_idx(idx: (u8, u8), event_enum_id: u32) -> (String, String) {
+    let meta = &*METADATA;
+
+    let event_ty = meta
+        .types
+        .types
+        .iter()
+        .find(|x| x.id == event_enum_id)
+        .unwrap();
+
+    match &event_ty.ty.type_def {
+        TypeDef::Variant(event_ty_var) => {
+            let variant0 = event_ty_var
+                .variants
+                .iter()
+                .find(|x| x.index == idx.0)
+                .unwrap();
+
+            let variant1_id = variant0.fields[0].ty.id;
+            let variant1_ty = meta
+                .types
+                .types
+                .iter()
+                .find(|x| x.id == variant1_id)
+                .unwrap();
+
+            match &variant1_ty.ty.type_def {
+                TypeDef::Variant(event_ty_var) => {
+                    let variant1 = event_ty_var
+                        .variants
+                        .iter()
+                        .find(|x| x.index == idx.1)
+                        .unwrap();
+
+                    return (variant0.name.clone(), variant1.name.clone());
+                }
+                _ => panic!("inner event type is not an enum?"),
+            }
+        }
+        _ => panic!("event type is not an enum?"),
+    }
+}
+
+pub fn event_name_from_idx(idx: (u8, u8)) -> (String, String) {
+    let meta = &*METADATA;
+
+    let event_enum_id = meta.outer_enums.event_enum_ty.id;
+
+    event_or_call_name_from_idx(idx, event_enum_id)
+}
+
+pub fn call_name_from_idx(idx: (u8, u8)) -> (String, String) {
+    let meta = &*METADATA;
+
+    let event_enum_id = meta.outer_enums.call_enum_ty.id;
+
+    event_or_call_name_from_idx(idx, event_enum_id)
+}
+
+pub fn error_name_from_idx(idx: (u8, u8)) -> (String, String) {
+    let meta = &*METADATA;
+
+    let event_enum_id = meta.outer_enums.error_enum_ty.id;
+
+    event_or_call_name_from_idx(idx, event_enum_id)
 }
