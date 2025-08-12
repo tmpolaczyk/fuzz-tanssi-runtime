@@ -6,6 +6,8 @@ members = [
 	"fuzzers/*",
 	"fuzzers/fuzz-dancelight/fuzz",
 	"fuzzers/fuzz-dancelight/fuzz-dancelight-cli",
+	"fuzzers/fuzz-starlight/fuzz",
+	"fuzzers/fuzz-starlight/fuzz-starlight-cli",
 ]
 resolver = "2"
 
@@ -15,13 +17,13 @@ repository = "https://github.com/tmpolaczyk/fuzz-tanssi-runtime"
 
 [workspace.dependencies]
 fuzz-dancelight = { path = "fuzzers/fuzz-dancelight" }
+fuzz-starlight = { path = "fuzzers/fuzz-starlight" }
 
 dancelight-runtime = { path = "../tanssi/chains/orchestrator-relays/runtime/dancelight", default-features = false }
 dancelight-runtime-constants = { path = "../tanssi/chains/orchestrator-relays/runtime/dancelight/constants/", default-features = false }
-pallet-configuration = { path = "../tanssi/pallets/configuration", default-features = false }
 starlight-runtime = { path = "../tanssi/chains/orchestrator-relays/runtime/starlight", default-features = false }
 starlight-runtime-constants = { path = "../tanssi/chains/orchestrator-relays/runtime/starlight/constants/", default-features = false }
-
+pallet-configuration = { path = "../tanssi/pallets/configuration", default-features = false }
 
 cumulus-primitives-core = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2503", default-features = false }
 frame-support = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2503", default-features = false }
