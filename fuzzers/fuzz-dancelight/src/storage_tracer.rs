@@ -241,7 +241,7 @@ mod tracing_externalities {
 
     #[derive(Debug)]
     pub enum ReadOrWrite {
-        Read(Vec<u8>),
+        Read(Vec<u8>, usize),
         Write(Vec<u8>, Vec<u8>),
         Remove(Vec<u8>),
         Append(Vec<u8>, Vec<u8>),
@@ -296,7 +296,11 @@ mod tracing_externalities {
     }
 
     impl ExtStorageTracer {
-        fn mark_read<K: Into<Vec<u8>> + AsRef<[u8]> + std::hash::Hash + Eq>(&mut self, key: K) {
+        fn mark_read<K: Into<Vec<u8>> + AsRef<[u8]> + std::hash::Hash + Eq>(
+            &mut self,
+            key: K,
+            size: usize,
+        ) {
             if self.whitelisted.contains(key.as_ref()) {
                 return;
             }
@@ -307,7 +311,7 @@ mod tracing_externalities {
             println!("mark_read: {}", backtrace);
             */
 
-            self.trace.push(ReadOrWrite::Read(key.into()));
+            self.trace.push(ReadOrWrite::Read(key.into(), size));
         }
         fn mark_write<K: Into<Vec<u8>> + AsRef<[u8]> + std::hash::Hash + Eq, V: Into<Vec<u8>>>(
             &mut self,
@@ -376,9 +380,9 @@ mod tracing_externalities {
         pub fn print_summary(&self) {
             for x in &self.trace {
                 match x {
-                    ReadOrWrite::Read(k) => {
+                    ReadOrWrite::Read(k, size) => {
                         let key_hex = hex::encode(k);
-                        println!("READ   {}", key_hex);
+                        println!("READ   {} : {} bytes", key_hex, size);
                     }
                     ReadOrWrite::Write(k, v) => {
                         let key_hex = hex::encode(k);
@@ -460,8 +464,13 @@ mod tracing_externalities {
         }
 
         fn storage(&mut self, key: &[u8]) -> Option<Vec<u8>> {
-            self.tracer.mark_read(key);
-            self.inner.storage(key)
+            let res = self.inner.storage(key);
+
+            // Track read size. For keys that dont exist, put 0 bytes.
+            self.tracer
+                .mark_read(key, res.as_ref().map(|x| x.len()).unwrap_or(0));
+
+            res
         }
 
         fn storage_hash(&mut self, key: &[u8]) -> Option<Vec<u8>> {
@@ -483,7 +492,7 @@ mod tracing_externalities {
             // So it does not read the input `key`, but actually it reads the next, `res` key
             // I guess? Not sure. Maybe it doesn't matter.
             if let Some(res) = &res {
-                self.tracer.mark_read(res.as_slice());
+                self.tracer.mark_read(res.as_slice(), 0);
             }
 
             res
@@ -623,6 +632,8 @@ pub struct StorageTracer {
     // histogram of key => num_writes
     top_writes: HashMap<Vec<u8>, u32>,
     // histogram of key => size_of_biggest_write
+    biggest_reads: HashMap<Vec<u8>, u32>,
+    // histogram of key => size_of_biggest_write
     biggest_writes: HashMap<Vec<u8>, u32>,
 }
 
@@ -691,8 +702,10 @@ impl StorageTracer {
     pub fn update_histograms(&mut self, ext_tracer: &ExtStorageTracer) {
         for x in ext_tracer.trace.iter() {
             match x {
-                ReadOrWrite::Read(key) => {
+                ReadOrWrite::Read(key, size) => {
                     *self.top_reads.entry(key.clone()).or_insert(0) += 1;
+                    let bw = self.biggest_reads.entry(key.clone()).or_insert(0);
+                    *bw = max(*bw, *size as u32);
                 }
                 ReadOrWrite::Write(key, value) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
@@ -707,6 +720,7 @@ impl StorageTracer {
                 ReadOrWrite::Append(key, value) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
                     let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
+                    // TODO: append could maybe be size = size + new, but not sure
                     *bw = max(*bw, value.len() as u32);
                 }
                 ReadOrWrite::KillPrefix(key) => {
@@ -754,10 +768,11 @@ impl StorageTracer {
             }
         }
 
-        print_top(&self.top_reads, "Top 10 reads", 10);
+        print_top(&self.top_reads, "Top most frequent reads", 6);
         println!();
-        print_top(&self.top_writes, "Top 10 writes", 10);
+        print_top(&self.top_writes, "Top most frequent writes", 6);
         println!();
+        print_top(&self.biggest_reads, "Top biggest storage reads in bytes", 3);
         print_top(
             &self.biggest_writes,
             "Top biggest storage writes in bytes",
