@@ -76,6 +76,8 @@ use {
 
 mod genesis;
 mod metadata;
+// TODO: extract to separate crate to speed up compilation
+mod simple_backend;
 mod storage_tracer;
 
 pub use storage_tracer::StorageTracer;
@@ -117,7 +119,7 @@ fn recursively_find_call(call: RuntimeCall, matches_on: fn(RuntimeCall) -> bool)
 /// Any extrinsic that could brick the chain should be disabled, we only want to test real-world scenarios.
 fn root_can_call(call: &RuntimeCall) -> bool {
     // TODO: for storage tracing fuzz_live_oneblock: disable root extrinsics
-    return false;
+    //return false;
     match call {
         // Allow root to call any pallet_registrar extrinsic, as it is unlikely to brick the chain
         // TODO: except register(1000), because that may actually break some things
@@ -548,6 +550,7 @@ use crate::genesis::invulnerables_from_seeds;
 use crate::metadata::{ACCOUNT_ID_TYPE_ID, METADATA, RUNTIME_CALL_TYPE_ID};
 use crate::storage_tracer::TracingExt;
 use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
+use crate::simple_backend::SimpleBackend;
 
 struct PanicOnError;
 
@@ -921,12 +924,13 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig>(data: &[u8]) {
 
     use sp_runtime::traits::BlakeTwo256;
     use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
-    let mut overlay = OverlayedChanges::default();
+    let mut overlay = OverlayedChanges::<BlakeTwo256>::default();
     let (storage, root, shared_cache) = FC::genesis_storage();
     let root = *root;
     let cache = shared_cache.local_cache();
-    let mut backend: TrieBackend<_, BlakeTwo256> =
-        TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+    //let mut backend: TrieBackend<_, BlakeTwo256> =
+    //    TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+    let backend = SimpleBackend::new(FC::genesis_storage_simple());
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
 
@@ -1281,14 +1285,18 @@ pub fn fuzz_zombie<FC: FuzzerConfig>(data: &[u8]) {
     use sp_runtime::traits::BlakeTwo256;
 
     use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
-    let mut overlay = OverlayedChanges::default();
+    let mut overlay = OverlayedChanges::<BlakeTwo256>::default();
     let (storage, root, shared_cache) = FC::genesis_storage();
     let root = *root;
     let cache = shared_cache.local_cache();
-    let mut backend: TrieBackend<_, BlakeTwo256> =
-        TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+    //let mut backend: TrieBackend<_, BlakeTwo256> =
+    //    TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+    let backend = SimpleBackend::new(FC::genesis_storage_simple());
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
+    // Using the fuzzer to check if we need to implement any extra Externalities methods,
+    // not using this for tracing.
+    //let mut ext = TracingExt::new(ext);
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
 

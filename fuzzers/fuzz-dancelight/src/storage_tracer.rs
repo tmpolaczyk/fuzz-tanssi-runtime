@@ -452,7 +452,7 @@ mod tracing_externalities {
 
     impl<T: Externalities> Externalities for TracingExt<T> {
         fn set_offchain_storage(&mut self, key: &[u8], value: Option<&[u8]>) {
-            todo!()
+            self.inner.set_offchain_storage(key, value)
         }
 
         fn storage(&mut self, key: &[u8]) -> Option<Vec<u8>> {
@@ -473,7 +473,16 @@ mod tracing_externalities {
         }
 
         fn next_storage_key(&mut self, key: &[u8]) -> Option<Vec<u8>> {
-            todo!()
+            let res = self.inner.next_storage_key(key);
+
+            // This function returns the next storage key after "key"
+            // So it does not read the input `key`, but actually it reads the next, `res` key
+            // I guess? Not sure. Maybe it doesn't matter.
+            if let Some(res) = &res {
+                self.tracer.mark_read(res.as_slice());
+            }
+
+            res
         }
 
         fn next_child_storage_key(
@@ -539,8 +548,25 @@ mod tracing_externalities {
             todo!()
         }
 
-        fn storage_root(&mut self, state_version: StateVersion) -> Vec<u8> {
-            todo!()
+        fn storage_root(&mut self, _state_version: StateVersion) -> Vec<u8> {
+            // TODO: we mock the storage root
+            // This is an attempt to make the fuzzer faster
+            // Ideally this should be part of another Externalities impl, not this one
+            // and this should just call self.inner as usual
+
+            // Mock storage root using block number
+            let block_number = self.inner.storage(&hex::decode("26aa394eea5630e07c48ae0c9558cef702a5c1b19ab7a04f536c519aca4983ac").unwrap()).unwrap();
+            assert_eq!(block_number.len(), 4);
+
+            let mut mocked: Vec<u8> = format!("__FUZZ_MOCK_STORAGE_ROOT_").into();
+            mocked.extend(block_number);
+            assert!(mocked.len() <= 32);
+
+            let mut x = vec![0u8; 32];
+
+            x[0..mocked.len()].copy_from_slice(&mocked);
+
+            x
         }
 
         fn child_storage_root(
