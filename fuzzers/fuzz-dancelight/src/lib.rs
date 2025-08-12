@@ -11,6 +11,7 @@ use itertools::{EitherOrBoth, Itertools};
 use libfuzzer_sys::arbitrary;
 use libfuzzer_sys::arbitrary::{Arbitrary, Unstructured};
 use std::collections::HashMap;
+use frame_support::dispatch::DispatchResultWithPostInfo;
 use frame_support::traits::CallerTrait;
 use {
     cumulus_primitives_core::ParaId,
@@ -1170,6 +1171,180 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
     //ext.tracer.print_summary();
 }
 
+pub struct BlockState {
+    block: u32,
+    slot: u64,
+    weight: Weight,
+    elapsed: Duration,
+    block_rewards: u128,
+    last_era: u32,
+}
+
+pub fn initialize_block(state: &mut BlockState) {
+    state.block += 1;
+    state.weight = Weight::zero();
+    state.elapsed = Duration::ZERO;
+
+    log::debug!(target: "fuzz::initialize", "\ninitializing block {}", state.block);
+
+    let validators = dancelight_runtime::Session::validators();
+    let authority_index =
+        u32::try_from(u64::from(state.slot) % u64::try_from(validators.len()).unwrap())
+            .unwrap();
+    let pre_digest = Digest {
+        logs: vec![DigestItem::PreRuntime(
+            BABE_ENGINE_ID,
+            PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
+                slot: Slot::from(state.slot),
+                authority_index,
+            })
+                .encode(),
+        )],
+    };
+
+    let grandparent_header = Header::new(
+        state.block,
+        H256::default(),
+        H256::default(),
+        <frame_system::Pallet<Runtime>>::parent_hash(),
+        pre_digest.clone(),
+    );
+
+    let parent_header = Header::new(
+        state.block,
+        H256::default(),
+        H256::default(),
+        grandparent_header.hash(),
+        pre_digest,
+    );
+
+    // Calculate max expected supply increase
+    {
+        let registered_para_ids = ContainerRegistrar::registered_para_ids();
+        if !registered_para_ids.is_empty() {
+            let new_supply_inflation_rewards =
+                CollatorsInflationRatePerBlock::get() * Balances::total_issuance();
+            state.block_rewards += new_supply_inflation_rewards;
+        }
+
+        if state.last_era == 0 {
+            let era_index = ExternalValidators::current_era().unwrap();
+            state.last_era = era_index;
+        }
+        let era_index = ExternalValidators::current_era().unwrap();
+        let mut new_era = false;
+        if era_index > state.last_era {
+            new_era = true;
+        }
+        if new_era {
+            let new_supply_validators =
+                ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
+            state.block_rewards += new_supply_validators;
+        }
+    }
+
+    Executive::initialize_block(&parent_header);
+
+    Timestamp::set(RuntimeOrigin::none(), state.slot * SLOT_DURATION).unwrap();
+    state.slot += 1;
+
+    Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
+        CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data {
+            data: (),
+        },
+    )))
+        .unwrap()
+        .unwrap();
+
+    ParaInherent::enter(
+        RuntimeOrigin::none(),
+        primitives::vstaging::InherentData {
+            parent_header: grandparent_header,
+            backed_candidates: Vec::default(),
+            bitfields: Vec::default(),
+            disputes: Vec::default(),
+        },
+    )
+        .unwrap();
+}
+
+pub fn finalize_block(state: &mut BlockState) {
+    log::debug!(target: "fuzz::time", "\n  time spent: {:?}", state.elapsed);
+    assert!(state.elapsed.as_secs() <= 2, "block execution took too much time");
+
+    log::debug!(target: "fuzz::finalize", "  finalizing block");
+    Executive::finalize_block();
+}
+
+pub struct OriginStateMachine {
+    origin: u8,
+    retry_as_root: bool,
+    try_root_first: bool,
+}
+
+impl OriginStateMachine {
+    pub fn new() -> Self {
+        Self {
+            origin: 0,
+            retry_as_root: true,
+            try_root_first: false,
+        }
+    }
+
+    pub fn first_origin(&self, extrinsic: &RuntimeCall) -> RuntimeOrigin {
+        // Check if this extrinsic can be called by root, if not return a Signed origin
+        let origin = if self.try_root_first && root_can_call(extrinsic) {
+            RuntimeOrigin::root()
+        } else {
+            RuntimeOrigin::signed(get_origin(self.origin.into()).clone())
+        };
+
+        origin
+    }
+
+    pub fn second_origin(&self, extrinsic: &RuntimeCall) -> Option<RuntimeOrigin> {
+        if self.retry_as_root == false {
+            None
+        } else if !root_can_call(extrinsic) {
+            // If root cannot call this extrinsic, only signed origin is valid, so no need to try 2 origins
+            None
+        } else {
+            if self.try_root_first {
+                // we already tried root, now try signed origin
+                Some(RuntimeOrigin::signed(get_origin(self.origin.into()).clone()))
+            } else {
+                // now try root
+                Some(RuntimeOrigin::root())
+            }
+        }
+    }
+
+    pub fn get_origins(&self, extrinsic: &RuntimeCall) -> impl Iterator<Item = RuntimeOrigin> {
+        std::iter::once(self.first_origin(extrinsic)).chain(
+            std::iter::once_with(|| self.second_origin(extrinsic)).flatten(),
+        )
+    }
+}
+
+pub fn format_dispatch_result(res: &DispatchResultWithPostInfo) -> String {
+    match res {
+        Ok(x) => {
+            if let Some(w) = x.actual_weight {
+                format!("Ok {{ actual_weight: {:?} }}", w)
+            } else {
+                format!("Ok {{ }}")
+            }
+        }
+        Err(e) => {
+            if let Some(w) = e.post_info.actual_weight {
+                format!("Err {{ error: {:?}, actual_weight: {:?} }}", e.error, w)
+            } else {
+                format!("Err {{ error: {:?} }}", e.error)
+            }
+        }
+    }
+}
+
 /// Start fuzzing a genesis raw spec generated by zombienet.
 /// This runs `on_initialize` and `on_finalize` for multiple blocks.
 pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
@@ -1188,103 +1363,13 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
 
     //println!("{:?}", extrinsics);
 
-    let mut block: u32 = 1;
-    let mut slot: Cell<u64> = Cell::new(1);
-    let mut weight: Weight = Weight::zero();
-    let mut elapsed: Duration = Duration::ZERO;
-    let mut block_rewards: Cell<u128> = Cell::new(0);
-    let mut last_era: Cell<u32> = Cell::new(0);
-
-    let initialize_block = |block: u32| {
-        log::debug!(target: "fuzz::initialize", "\ninitializing block {block}");
-
-        let validators = dancelight_runtime::Session::validators();
-        let authority_index =
-            u32::try_from(u64::from(slot.get()) % u64::try_from(validators.len()).unwrap())
-                .unwrap();
-        let pre_digest = Digest {
-            logs: vec![DigestItem::PreRuntime(
-                BABE_ENGINE_ID,
-                PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
-                    slot: Slot::from(slot.get()),
-                    authority_index,
-                })
-                .encode(),
-            )],
-        };
-
-        let grandparent_header = Header::new(
-            block,
-            H256::default(),
-            H256::default(),
-            <frame_system::Pallet<Runtime>>::parent_hash(),
-            pre_digest.clone(),
-        );
-
-        let parent_header = Header::new(
-            block,
-            H256::default(),
-            H256::default(),
-            grandparent_header.hash(),
-            pre_digest,
-        );
-
-        // Calculate max expected supply increase
-        {
-            let registered_para_ids = ContainerRegistrar::registered_para_ids();
-            if !registered_para_ids.is_empty() {
-                let new_supply_inflation_rewards =
-                    CollatorsInflationRatePerBlock::get() * Balances::total_issuance();
-                block_rewards.set(block_rewards.get() + new_supply_inflation_rewards);
-            }
-
-            if last_era.get() == 0 {
-                let era_index = ExternalValidators::current_era().unwrap();
-                last_era.set(era_index);
-            }
-            let era_index = ExternalValidators::current_era().unwrap();
-            let mut new_era = false;
-            if era_index > last_era.get() {
-                new_era = true;
-            }
-            if new_era {
-                let new_supply_validators =
-                    ValidatorsInflationRatePerEra::get() * Balances::total_issuance();
-                block_rewards.set(block_rewards.get() + new_supply_validators);
-            }
-        }
-
-        Executive::initialize_block(&parent_header);
-
-        Timestamp::set(RuntimeOrigin::none(), slot.get() * SLOT_DURATION).unwrap();
-        slot.set(slot.get() + 1);
-
-        Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
-            CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data {
-                data: (),
-            },
-        )))
-        .unwrap()
-        .unwrap();
-
-        ParaInherent::enter(
-            RuntimeOrigin::none(),
-            primitives::vstaging::InherentData {
-                parent_header: grandparent_header,
-                backed_candidates: Vec::default(),
-                bitfields: Vec::default(),
-                disputes: Vec::default(),
-            },
-        )
-        .unwrap();
-    };
-
-    let finalize_block = |elapsed: Duration| {
-        log::debug!(target: "fuzz::time", "\n  time spent: {elapsed:?}");
-        assert!(elapsed.as_secs() <= 2, "block execution took too much time");
-
-        log::debug!(target: "fuzz::finalize", "  finalizing block");
-        Executive::finalize_block();
+    let mut block_state = BlockState {
+        block: 1,
+        slot: 1,
+        weight: Weight::zero(),
+        elapsed: Duration::ZERO,
+        block_rewards: 0,
+        last_era: 0,
     };
 
     use sp_runtime::traits::BlakeTwo256;
@@ -1307,140 +1392,79 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
 
-        initialize_block(block);
+        initialize_block(&mut block_state);
 
         // Origin is kind of like a state machine
         // By default we try using Alice, and if we get Err::BadOrigin, we check if root_can_call
         // that extrinsic, and if so retry as root
-        let mut origin = 0;
-        let mut origin_retry_as_root = true;
-        let mut origin_try_root_first = false;
+        let mut origin_sm = OriginStateMachine::new();
 
         //let mut seen_values = SeenValues::default();
         //test_mutate(&mut extrinsics, &mut seen_values);
 
         for extrinsic in extrinsics {
-            // Only create 1 block, do not even finalize it
+            if block_state.block >= 200 {
+                // Hard limit of 200 blocks, hopefully its enough to test all the Era stuff
+                assert!(block_state.last_era > 2, "{:?}", block_state.last_era);
+                break;
+            }
             match extrinsic {
                 ExtrOrPseudo::Extr(extrinsic) => {
-                    /*
-                    weight.saturating_accrue(extrinsic.get_dispatch_info().call_weight);
-                    weight.saturating_accrue(extrinsic.get_dispatch_info().extension_weight);
-                    if weight.ref_time() >= 2 * WEIGHT_REF_TIME_PER_SECOND {
-                        log::warn!("Extrinsic would exhaust block weight, skipping");
-                        continue;
-                    }
-                     */
-                    // Ignore weight because we will be executing all extrinsics in the same block.
-                    // But detect expensive extrinsics that take the whole block.
-                    // I tried to panic but there are many edge cases here:
-                    // * Disabled extrinsics return a big weight, not u64::MAX, but some random big number different for each extrinsic.
-                    //   Examples: set_hrmp_open_request_ttl, force_process_hrmp_close
-                    // * Parametric weights can easily overflow. For example, if the weight depends on some param n, and we set n = 1_000_000,
-                    //   then the weight will be a million times greater than expected. So in practice this extrinsic cannot be called with this
-                    //   arg, so we must skip it here. An example is `RuntimeCall::FellowshipCollective(Call::remove_member {..})`
                     let eww = extrinsic.get_dispatch_info();
                     if eww.call_weight.ref_time() + eww.extension_weight.ref_time()
-                        >= 2 * WEIGHT_REF_TIME_PER_SECOND
-                    /*&&
-                    match &extrinsic {
-                        // Whitelist some extrinsics with big weights
-                        RuntimeCall::Configuration(runtime_parachains::configuration::Call::set_hrmp_open_request_ttl { .. }) => false,
-                        RuntimeCall::Hrmp(CallableCallFor::<dancelight_runtime::Hrmp>::force_process_hrmp_close { .. }) => false,
-                        // I guess everything under HRMP is disabled
-                        RuntimeCall::Hrmp(..) => false,
-                        _ => true,
-                    }*/
-                    {
-                        //log::error!(target: "fuzz::call", "    call:       {extrinsic:?}");
-                        //panic!("Extrinsic would exhaust block weight");
+                        >= 2 * WEIGHT_REF_TIME_PER_SECOND {
+                        // This extrinsic weight is greater than the allowed block weight.
+                        // This is normal, it can happen for:
+                        // * Disabled extrinsics. When an extrinsic benchmark fails, its weight is set
+                        //   to a high value to effectively disable it.
+                        // * High input params. Some extrinsics have a weight that depends on some
+                        //   input. If we set that input to u32::MAX, the weight will also probably be
+                        //   u32::MAX. So we ignore this call.
+                        //log::warn!("Extrinsic would exhaust block weight, skipping");
                         continue;
                     }
 
-                    let mut origin_is_root = false;
-                    let origin_u8 = origin;
-                    let origin = if origin == 0 {
-                        // Check if this extrinsic can be called by root, if not return a Signed origin
-                        if origin_try_root_first && root_can_call(&extrinsic) {
-                            origin_is_root = true;
+                    for origin in origin_sm.get_origins(&extrinsic) {
+                        block_state.weight.saturating_accrue(eww.call_weight);
+                        block_state.weight.saturating_accrue(eww.extension_weight);
+                        if block_state.weight.ref_time() >= 2 * WEIGHT_REF_TIME_PER_SECOND {
+                            // The extrinsic fits in an empty block, but not in this block. So create a new block
+                            // TODO: the fuzzer should be faster if we ignore block weight and create bigger blocks than expected
+                            let ignore_block_weight_limit = true;
+                            if !ignore_block_weight_limit {
+                                finalize_block(&mut block_state);
+                                initialize_block(&mut block_state);
+                                block_state.weight.saturating_accrue(eww.call_weight);
+                                block_state.weight.saturating_accrue(eww.extension_weight);
 
-                            RuntimeOrigin::root()
-                        } else {
-                            RuntimeOrigin::signed(get_origin(origin.into()).clone())
+                                assert_eq!(
+                                    block_state.weight.ref_time() >= 2 * WEIGHT_REF_TIME_PER_SECOND,
+                                    false,
+                                    "initialize_block should reset block weight to 0, and we checked that the extrinsic weight fits in an empty block above"
+                                );
+                            }
                         }
-                    } else {
-                        RuntimeOrigin::signed(get_origin(origin.into()).clone())
-                    };
 
-                    log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
-                    log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
+                        log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
+                        log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
 
-                    let now = Instant::now(); // We get the current time for timing purposes.
-                    #[allow(unused_variables)]
-                    let mut res = extrinsic.clone().dispatch(origin.clone());
-                    elapsed += now.elapsed();
+                        let now = Instant::now(); // We get the current time for timing purposes.
+                        #[allow(unused_variables)]
+                        let res = extrinsic.clone().dispatch(origin.clone());
+                        block_state.elapsed += now.elapsed();
 
-                    if origin_retry_as_root {
+                        log::debug!(target: "fuzz::result", "    result:     {}", format_dispatch_result(&res));
+
                         if let Err(e) = &res {
                             if let DispatchError::BadOrigin = &e.error {
-                                // Retry using a different origin
-                                let origin = if origin_is_root {
-                                    // First we tried as root, now retry as signed origin
-                                    Some(RuntimeOrigin::signed(
-                                        get_origin(origin_u8.into()).clone(),
-                                    ))
-                                } else {
-                                    // Retry as root if allowed
-                                    if root_can_call(&extrinsic) {
-                                        Some(RuntimeOrigin::root())
-                                    } else {
-                                        // If not allowed, do not retry
-                                        None
-                                    }
-                                };
-                                if let Some(origin) = origin {
-                                    log::debug!(target: "fuzz::result", "    result:     {}", match &res {
-                                        Ok(x) => {
-                                            if let Some(w) = x.actual_weight {
-                                                format!("Ok {{ actual_weight: {:?} }}", w)
-                                            } else {
-                                                format!("Ok {{ }}")
-                                            }
-                                        }
-                                        Err(e) => {
-                                            if let Some(w) = e.post_info.actual_weight {
-                                                format!("Err {{ error: {:?}, actual_weight: {:?} }}", e.error, w)
-                                            } else {
-                                                format!("Err {{ error: {:?} }}", e.error)
-                                            }
-                                        }
-                                    });
-
-                                    log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
-                                    log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
-
-                                    res = extrinsic.clone().dispatch(origin);
-                                }
+                                // BadOrigin: retry with next origin
+                                continue;
                             }
                         }
+
+                        // By default only try one origin, unless the error is BadOrigin
+                        break;
                     }
-
-                    log::debug!(target: "fuzz::result", "    result:     {}", match &res {
-                        Ok(x) => {
-                            if let Some(w) = x.actual_weight {
-                                format!("Ok {{ actual_weight: {:?} }}", w)
-                            } else {
-                                format!("Ok {{ }}")
-                            }
-                        }
-                        Err(e) => {
-                            if let Some(w) = e.post_info.actual_weight {
-                                format!("Err {{ error: {:?}, actual_weight: {:?} }}", e.error, w)
-                            } else {
-                                format!("Err {{ error: {:?} }}", e.error)
-                            }
-                        }
-                    });
                 }
                 ExtrOrPseudo::Pseudo(fuzz_call) => {
                     match fuzz_call {
@@ -1449,9 +1473,9 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
                             retry_as_root,
                             try_root_first,
                         } => {
-                            origin = new_origin;
-                            origin_retry_as_root = retry_as_root;
-                            origin_try_root_first = try_root_first;
+                            origin_sm.origin = new_origin;
+                            origin_sm.retry_as_root = retry_as_root;
+                            origin_sm.try_root_first = try_root_first;
                         }
                         // Set relay data and start a new block
                         FuzzRuntimeCall::SetRelayData(x) => {
@@ -1467,32 +1491,22 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
                             continue;
                         }
                         FuzzRuntimeCall::NewBlock => {
-                            finalize_block(elapsed);
-
-                            block += 1;
-                            weight = 0.into();
-                            elapsed = Duration::ZERO;
-
-                            initialize_block(block);
+                            finalize_block(&mut block_state);
+                            initialize_block(&mut block_state);
                             continue;
                         }
                         FuzzRuntimeCall::NewSession => {
-                            // Since sessions are timestamp based in relay chain, we can just
-                            // mock the timestamp and create one block only
-                            // 1 session = 10 blocks so increase timestamp by 10 slots
-                            slot.set(slot.get() + 10);
-
                             let session_start = Session::current_index();
                             let mut count = 0u32;
                             loop {
                                 count += 1;
-                                finalize_block(elapsed);
+                                // Since sessions are timestamp based in relay chain, we can just
+                                // mock the timestamp and create one block only
+                                // 1 session = 10 blocks so increase timestamp by 10 slots
+                                block_state.slot += 10;
 
-                                block += 1;
-                                weight = 0.into();
-                                elapsed = Duration::ZERO;
-
-                                initialize_block(block);
+                                finalize_block(&mut block_state);
+                                initialize_block(&mut block_state);
 
                                 let new_session = Session::current_index();
 
@@ -1510,16 +1524,14 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
             }
         }
 
-        finalize_block(elapsed);
+        finalize_block(&mut block_state);
         // Disabled this to improve performance
-        /*
-        check_invariants(block, initial_total_issuance, block_rewards.get());
-         */
+        check_invariants(block_state.block, initial_total_issuance, block_state.block_rewards);
         // Assert that it is not possible to mint tokens using the allowed extrinsics
         let final_total_issuance = TotalIssuance::<Runtime>::get();
         // Some extrinsics burn tokens so final issuance can be lower
         assert!(
-            initial_total_issuance.saturating_add(block_rewards.get()) >= final_total_issuance,
+            initial_total_issuance.saturating_add(block_state.block_rewards) >= final_total_issuance,
             "{} >= {}",
             initial_total_issuance,
             final_total_issuance
