@@ -622,6 +622,8 @@ pub struct StorageTracer {
     top_reads: HashMap<Vec<u8>, u32>,
     // histogram of key => num_writes
     top_writes: HashMap<Vec<u8>, u32>,
+    // histogram of key => size_of_biggest_write
+    biggest_writes: HashMap<Vec<u8>, u32>,
 }
 
 impl StorageTracer {
@@ -692,20 +694,30 @@ impl StorageTracer {
                 ReadOrWrite::Read(key) => {
                     *self.top_reads.entry(key.clone()).or_insert(0) += 1;
                 }
-                ReadOrWrite::Write(key, _) => {
+                ReadOrWrite::Write(key, value) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                    let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
+                    *bw = max(*bw, value.len() as u32);
                 }
                 ReadOrWrite::Remove(key) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                    let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
+                    *bw = max(*bw, 0);
                 }
-                ReadOrWrite::Append(key, _) => {
+                ReadOrWrite::Append(key, value) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                    let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
+                    *bw = max(*bw, value.len() as u32);
                 }
                 ReadOrWrite::KillPrefix(key) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                    let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
+                    *bw = max(*bw, 0);
                 }
                 ReadOrWrite::KillPrefixPartial(key, _) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
+                    let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
+                    *bw = max(*bw, 0);
                 }
                 ReadOrWrite::StartTransaction => {}
                 ReadOrWrite::RollbackTransaction => {}
@@ -715,7 +727,7 @@ impl StorageTracer {
     }
 
     pub fn print_histograms(&self) {
-        fn print_top(map: &HashMap<Vec<u8>, u32>, heading: &str) {
+        fn print_top(map: &HashMap<Vec<u8>, u32>, heading: &str, top_k: usize) {
             let mut items: Vec<(&[u8], u32)> =
                 map.iter().map(|(k, &v)| (k.as_slice(), v)).collect();
 
@@ -723,7 +735,7 @@ impl StorageTracer {
                 println!("<empty>");
                 return;
             }
-            let k = 10.min(items.len());
+            let k = top_k.min(items.len());
 
             // Partition so the largest k elements (by count, then key) are in the last k slots.
             let nth_index = items.len() - k;
@@ -742,9 +754,15 @@ impl StorageTracer {
             }
         }
 
-        print_top(&self.top_reads, "Top 10 reads");
+        print_top(&self.top_reads, "Top 10 reads", 10);
         println!();
-        print_top(&self.top_writes, "Top 10 writes");
+        print_top(&self.top_writes, "Top 10 writes", 10);
+        println!();
+        print_top(
+            &self.biggest_writes,
+            "Top biggest storage writes in bytes",
+            3,
+        );
     }
 
     pub fn print_all_keys_alphabetical(&self) {

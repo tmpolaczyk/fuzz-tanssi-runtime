@@ -1,6 +1,10 @@
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
-use fuzz_dancelight::{ExtrOrPseudo, FuzzLiveOneblock, FuzzZombie, StorageTracer, extrinsics_iter, fuzz_decode_calls, fuzz_init, fuzz_init_only_logger, fuzz_live_oneblock, fuzz_zombie, STORAGE_TRACER, TraceStorage};
+use fuzz_dancelight::{
+    ExtrOrPseudo, FuzzLiveOneblock, FuzzZombie, STORAGE_TRACER, StorageTracer, TraceStorage,
+    extrinsics_iter, fuzz_decode_calls, fuzz_init, fuzz_init_only_logger, fuzz_live_oneblock,
+    fuzz_zombie,
+};
 use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
 use scale_info::TypeInfo;
 use std::path::Path;
