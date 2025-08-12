@@ -148,7 +148,6 @@ fn root_can_call(call: &RuntimeCall) -> bool {
             CallableCallFor::<dancelight_runtime::ExternalValidators>::add_whitelisted { .. } => true,
             // TODO: check that we don't remove all?
             CallableCallFor::<dancelight_runtime::ExternalValidators>::remove_whitelisted { .. } => true,
-            // force_era will not be properly tested because this test only runs for one block
             CallableCallFor::<dancelight_runtime::ExternalValidators>::force_era { .. } => true,
             _ => true,
         }
@@ -167,6 +166,26 @@ fn root_can_call(call: &RuntimeCall) -> bool {
             CallableCallFor::<dancelight_runtime::Utility>::force_batch { calls } => calls.iter().all(root_can_call),
             _ => false,
         }
+        // Allow entering maintenance mode, shouldnt break anything
+        RuntimeCall::MaintenanceMode(x) => true,
+        // Allow enable and disable inactivity tracking
+        RuntimeCall::InactivityTracking(x) => true,
+        // Some ethereum pallets, also shouldnt break anything
+        RuntimeCall::EthereumBeaconClient(x) => true,
+        RuntimeCall::EthereumOutboundQueue(x) => true,
+        RuntimeCall::EthereumInboundQueue(x) => true,
+        RuntimeCall::EthereumSystem(x) => match x {
+            /*
+            Overflow when casting to u128:
+            [Extr(RuntimeCall::EthereumSystem(Call::set_pricing_parameters { params: PricingParameters { exchange_rate: FixedU128(49374304219900875090.764158725393818943), rewards: Rewards { local: 49374304219900874850019441219996034341, remote: 233163559363069177235500382025972612914986316744954254533925 }, fee_per_gas: 16801205105022349924204417432633147414003880127955689684156590579914555523072, multiplier: FixedU128(49374304219900875090.764158725393818917) } }))]
+             */
+            CallableCallFor::<dancelight_runtime::EthereumSystem>::set_pricing_parameters { .. } => false,
+            _ => true,
+        },
+        RuntimeCall::EthereumTokenTransfers(x) => true,
+        RuntimeCall::ForeignAssetsCreator(x) => true,
+        RuntimeCall::ForeignAssets(x) => true,
+        RuntimeCall::Beefy(x) => true,
         _ => false,
     }
 }
