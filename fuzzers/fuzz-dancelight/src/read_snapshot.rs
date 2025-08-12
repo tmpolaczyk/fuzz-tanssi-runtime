@@ -94,6 +94,12 @@ pub fn read_snapshot(
             )
             .unwrap();
         }
+
+        // Remove sudo key from storage
+        // This is to simplify the fuzzer: we already support root origin directly
+        // As an alternative we could filter out the calls for pallet_sudo, but this way we see some
+        // coverage in that pallet at least
+        dancelight_runtime::Sudo::remove_key(RuntimeOrigin::root()).unwrap();
     });
 
     drop(ext);

@@ -922,6 +922,7 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
             }
         }
 
+        ExtStorageTracer::set_block_context(BlockContext::TryState);
         // Disabled this to improve performance
         /*
         finalize_block(elapsed);
@@ -1116,6 +1117,7 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
         }
 
         finalize_block(&mut block_state);
+        ExtStorageTracer::set_block_context(BlockContext::TryState);
         // Disabled this to improve performance
         check_invariants(
             block_state.block,

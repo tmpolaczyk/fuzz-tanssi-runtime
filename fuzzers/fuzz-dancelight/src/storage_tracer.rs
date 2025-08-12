@@ -173,9 +173,10 @@ mod tracing_externalities {
     pub enum BlockContext {
         OnInitialize,
         Inherents,
-        ExtrinsicSigned,
         ExtrinsicRoot,
+        ExtrinsicSigned,
         OnFinalize,
+        TryState,
     }
 
     impl BlockContext {
@@ -183,9 +184,10 @@ mod tracing_externalities {
             match x {
                 0 => BlockContext::OnInitialize,
                 1 => BlockContext::Inherents,
-                2 => BlockContext::ExtrinsicSigned,
-                3 => BlockContext::ExtrinsicRoot,
+                2 => BlockContext::ExtrinsicRoot,
+                3 => BlockContext::ExtrinsicSigned,
                 4 => BlockContext::OnFinalize,
+                5 => BlockContext::TryState,
                 _ => panic!("invalid value for BlockContext: {}", x),
             }
         }
@@ -193,9 +195,10 @@ mod tracing_externalities {
             match self {
                 BlockContext::OnInitialize => 0,
                 BlockContext::Inherents => 1,
-                BlockContext::ExtrinsicSigned => 2,
-                BlockContext::ExtrinsicRoot => 3,
+                BlockContext::ExtrinsicRoot => 2,
+                BlockContext::ExtrinsicSigned => 3,
                 BlockContext::OnFinalize => 4,
+                BlockContext::TryState => 5,
             }
         }
     }
@@ -806,19 +809,20 @@ impl StorageTracer {
     /// Like `print_histograms`, but shows per-context RW flags for each key
     /// in a fixed order: [OnInitialize, Inherents, ExtrinsicSigned, ExtrinsicRoot, OnFinalize].
     pub fn print_histograms_by_context(&self) {
-        use BlockContext::{ExtrinsicRoot, ExtrinsicSigned, Inherents, OnFinalize, OnInitialize};
+        use BlockContext::*;
 
-        const ORDER: [BlockContext; 5] = [
+        const ORDER: [BlockContext; 6] = [
             OnInitialize,
             Inherents,
-            ExtrinsicSigned,
             ExtrinsicRoot,
+            ExtrinsicSigned,
             OnFinalize,
+            TryState,
         ];
 
         fn tokens_line(
             key: &[u8],
-            order: &[BlockContext; 5],
+            order: &[BlockContext; 6],
             rb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
             wb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
         ) -> String {
@@ -837,7 +841,7 @@ impl StorageTracer {
 
         fn print_top_with_context(
             flat: &HashMap<Vec<u8>, u32>,
-            order: &[BlockContext; 5],
+            order: &[BlockContext; 6],
             rb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
             wb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
             heading: &str,
@@ -860,12 +864,12 @@ impl StorageTracer {
             topk.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
             println!("{heading}");
-            println!("Legend per context [Init Inh Sig Root Fin]: R=read, W=write, -=none");
+            println!("Legend per context [Init Inh Root Sig Fin Try]: R=read, W=write, -=none");
             for (key, count) in topk.iter() {
                 let tokens = tokens_line(key, order, rb, wb);
-                // 14 = 5 tokens * 2 chars + 4 spaces between them
-                println!("{:<14} {:>8}  {}", tokens, count, unhash_storage_key(key));
-                println!("{:>14}      {}", "", hex::encode(key));
+                // 17 = 6 tokens * 2 chars + 5 spaces between them
+                println!("{:<17} {:>8}  {}", tokens, count, unhash_storage_key(key));
+                println!("{:>17}      {}", "", hex::encode(key));
             }
         }
 
@@ -937,13 +941,14 @@ impl StorageTracer {
     /// Alphabetical listing of all keys with per-context RW flags.
     /// Context order: [OnInitialize, Inherents, ExtrinsicSigned, ExtrinsicRoot, OnFinalize].
     pub fn print_all_keys_alphabetical_by_context(&self) {
-        use BlockContext::{ExtrinsicRoot, ExtrinsicSigned, Inherents, OnFinalize, OnInitialize};
-        const ORDER: [BlockContext; 5] = [
+        use BlockContext::*;
+        const ORDER: [BlockContext; 6] = [
             OnInitialize,
             Inherents,
-            ExtrinsicSigned,
             ExtrinsicRoot,
+            ExtrinsicSigned,
             OnFinalize,
+            TryState,
         ];
 
         fn trim_32(k: &[u8]) -> &[u8] {
@@ -952,7 +957,7 @@ impl StorageTracer {
 
         fn tokens_for_key(
             key: &[u8],
-            order: &[BlockContext; 5],
+            order: &[BlockContext; 6],
             rb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
             wb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
         ) -> String {
@@ -974,7 +979,7 @@ impl StorageTracer {
             let mut out = String::new();
             let mut ta = a.split_whitespace();
             let mut tb = b.split_whitespace();
-            for i in 0..5 {
+            for i in 0..6 {
                 let aa = ta.next().unwrap_or("--").as_bytes();
                 let bb = tb.next().unwrap_or("--").as_bytes();
                 let r = (aa.get(0) == Some(&b'R')) || (bb.get(0) == Some(&b'R'));
@@ -1025,10 +1030,10 @@ impl StorageTracer {
             }
         });
 
-        println!("Legend per context [Init Inh Sig Root Fin]: R=read, W=write, -=none");
+        println!("Legend per context [Init Inh Root Sig Fin Try]: R=read, W=write, -=none");
         for ((k1, k2), tokens) in v {
-            // 14 = "RW RW RW RW RW"
-            println!("{:<14} {:56} {}", tokens, k1, k2);
+            // 17 = "RW RW RW RW RW RW"
+            println!("{:<17} {:56} {}", tokens, k1, k2);
         }
     }
 }
