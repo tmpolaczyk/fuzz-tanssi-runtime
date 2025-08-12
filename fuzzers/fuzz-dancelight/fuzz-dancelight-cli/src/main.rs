@@ -41,6 +41,17 @@ enum Commands {
         corpus_path: Option<String>,
     },
 
+    /// Execute the corpus fuzzing target
+    EventTracer {
+        /// The name of the fuzz target to run
+        #[arg(long)]
+        fuzz_target: String,
+        #[arg(long, conflicts_with = "corpus_path")]
+        input_path: Option<String>,
+        #[arg(long, conflicts_with = "input_path")]
+        corpus_path: Option<String>,
+    },
+
     /// Update a snapshot and output as hex
     UpdateSnapshot {
         /// Path to the input snapshot file
@@ -135,6 +146,23 @@ fn main() -> Result<()> {
         } => {
             assert_eq!(input_path, None, "unimplemented");
             assert_eq!(corpus_path, None, "unimplemented");
+            let fuzz_main = init_and_get_fuzz_main_trace_storage(fuzz_target.as_str());
+            coverage::execute_corpus(&fuzz_target, fuzz_main);
+
+            let storage_tracer = STORAGE_TRACER.lock().unwrap();
+            storage_tracer.print_histograms_by_context();
+            println!();
+            storage_tracer.print_all_keys_alphabetical_by_context();
+
+            Ok(())
+        }
+        Commands::EventTracer {
+            fuzz_target,
+            input_path,
+            corpus_path,
+        } => {
+            assert_eq!(input_path, None, "unimplemented");
+            assert_eq!(corpus_path, None, "unimplemented");
             let fuzz_main = init_and_get_fuzz_main_trace_events(fuzz_target.as_str());
             coverage::execute_corpus(&fuzz_target, fuzz_main);
 
@@ -145,12 +173,6 @@ fn main() -> Result<()> {
             println!("SUCCESSFUL EXTRINSICS");
             let extr_tracer = EXTR_TRACER.lock().unwrap();
             extr_tracer.print_ok_extrs();
-            /*
-            let storage_tracer = STORAGE_TRACER.lock().unwrap();
-            storage_tracer.print_histograms_by_context();
-            println!();
-            storage_tracer.print_all_keys_alphabetical_by_context();
-             */
 
             Ok(())
         }
