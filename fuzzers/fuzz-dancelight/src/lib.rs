@@ -902,143 +902,6 @@ pub fn default_extrinsics_filter(x: &ExtrOrPseudo) -> bool {
     }
 }
 
-/// Start fuzzing a snapshot of a live network.
-/// This doesn't run `on_initialize` and `on_finalize`, everything is executed inside the same block.
-/// Inherents are also not tested, the snapshot is created after the inherents.
-pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
-    FUZZ_MAIN_CALLED.store(true, std::sync::atomic::Ordering::SeqCst);
-    //println!("data: {:?}", data);
-    let mut extrinsic_data = data;
-    //#[allow(deprecated)]
-    let mut extrinsics: Vec<ExtrOrPseudo> =
-        iter::from_fn(|| DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
-            .filter(FC::extrinsics_filter)
-            .collect();
-
-    if extrinsics.is_empty() {
-        return;
-    }
-
-    //println!("{:?}", extrinsics);
-    let mut elapsed = Duration::ZERO;
-
-    let mut ext_parts = FC::externalities_parts();
-    let mut ext = FC::ext_new(&mut ext_parts);
-
-    // Using the fuzzer to check if we need to implement any extra Externalities methods,
-    // not using this for tracing.
-    //let mut ext = TracingExt::new(ext);
-
-    sp_externalities::set_and_run_with_externalities(&mut ext, || {
-        let initial_total_issuance = TotalIssuance::<Runtime>::get();
-
-        // The snapshot is saved after the initial on_initialize
-        //initialize_block(block);
-
-        // Origin is kind of like a state machine
-        // By default we try using Alice, and if we get Err::BadOrigin, we check if root_can_call
-        // that extrinsic, and if so retry as root
-        let mut origin_sm = OriginStateMachine::new();
-
-        //let mut seen_values = SeenValues::default();
-        //test_mutate(&mut extrinsics, &mut seen_values);
-
-        for extrinsic in extrinsics {
-            match extrinsic {
-                ExtrOrPseudo::Extr(extrinsic) => {
-                    let eww = extrinsic.get_dispatch_info();
-                    if eww.call_weight.ref_time() + eww.extension_weight.ref_time()
-                        >= 2 * WEIGHT_REF_TIME_PER_SECOND
-                    {
-                        // This extrinsic weight is greater than the allowed block weight.
-                        // This is normal, it can happen for:
-                        // * Disabled extrinsics. When an extrinsic benchmark fails, its weight is set
-                        //   to a high value to effectively disable it.
-                        // * High input params. Some extrinsics have a weight that depends on some
-                        //   input. If we set that input to u32::MAX, the weight will also probably be
-                        //   u32::MAX. So we ignore this call.
-                        //log::warn!("Extrinsic would exhaust block weight, skipping");
-                        continue;
-                    }
-
-                    for origin in origin_sm.get_origins(&extrinsic) {
-                        log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
-                        log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
-
-                        let now = Instant::now(); // We get the current time for timing purposes.
-                        #[allow(unused_variables)]
-                        let res = extrinsic.clone().dispatch(origin.clone());
-                        elapsed += now.elapsed();
-
-                        log::debug!(target: "fuzz::result", "    result:     {}", format_dispatch_result(&res));
-
-                        if let Err(e) = &res {
-                            if let DispatchError::BadOrigin = &e.error {
-                                // BadOrigin: retry with next origin
-                                continue;
-                            }
-                        }
-
-                        // By default only try one origin, unless the error is BadOrigin
-                        break;
-                    }
-                }
-                ExtrOrPseudo::Pseudo(fuzz_call) => {
-                    match fuzz_call {
-                        FuzzRuntimeCall::SetOrigin {
-                            origin: new_origin,
-                            retry_as_root,
-                            try_root_first,
-                        } => {
-                            origin_sm.origin = new_origin;
-                            origin_sm.retry_as_root = retry_as_root;
-                            origin_sm.try_root_first = try_root_first;
-                        }
-                        // Set relay data and start a new block
-                        FuzzRuntimeCall::SetRelayData(x) => {
-                            // Disabled
-                            continue;
-                        }
-                        FuzzRuntimeCall::CallRuntimeApi(x) => {
-                            // Disabled because anything related to block building will panic
-                            continue;
-                        }
-                        FuzzRuntimeCall::RecvEthMsg(x) => {
-                            // Unimplemented
-                            continue;
-                        }
-                        FuzzRuntimeCall::NewBlock => {
-                            // Unimplemented
-                            continue;
-                        }
-                        FuzzRuntimeCall::NewSession => {
-                            // Unimplemented
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Disabled this to improve performance
-        /*
-        finalize_block(elapsed);
-        check_invariants(block, initial_total_issuance, block_rewards.get());
-         */
-        // Assert that it is not possible to mint tokens using the allowed extrinsics
-        let final_total_issuance = TotalIssuance::<Runtime>::get();
-        // Some extrinsics burn tokens so final issuance can be lower
-        assert!(
-            initial_total_issuance >= final_total_issuance,
-            "{} >= {}",
-            initial_total_issuance,
-            final_total_issuance
-        );
-    });
-
-    //ext.tracer.print_summary();
-}
-
 pub struct BlockState {
     block: u32,
     slot: u64,
@@ -1228,6 +1091,143 @@ pub fn format_dispatch_result(res: &DispatchResultWithPostInfo) -> String {
             }
         }
     }
+}
+
+/// Start fuzzing a snapshot of a live network.
+/// This doesn't run `on_initialize` and `on_finalize`, everything is executed inside the same block.
+/// Inherents are also not tested, the snapshot is created after the inherents.
+pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
+    FUZZ_MAIN_CALLED.store(true, std::sync::atomic::Ordering::SeqCst);
+    //println!("data: {:?}", data);
+    let mut extrinsic_data = data;
+    //#[allow(deprecated)]
+    let mut extrinsics: Vec<ExtrOrPseudo> =
+        iter::from_fn(|| DecodeLimit::decode_with_depth_limit(64, &mut extrinsic_data).ok())
+            .filter(FC::extrinsics_filter)
+            .collect();
+
+    if extrinsics.is_empty() {
+        return;
+    }
+
+    //println!("{:?}", extrinsics);
+    let mut elapsed = Duration::ZERO;
+
+    let mut ext_parts = FC::externalities_parts();
+    let mut ext = FC::ext_new(&mut ext_parts);
+
+    // Using the fuzzer to check if we need to implement any extra Externalities methods,
+    // not using this for tracing.
+    //let mut ext = TracingExt::new(ext);
+
+    sp_externalities::set_and_run_with_externalities(&mut ext, || {
+        let initial_total_issuance = TotalIssuance::<Runtime>::get();
+
+        // The snapshot is saved after the initial on_initialize
+        //initialize_block(block);
+
+        // Origin is kind of like a state machine
+        // By default we try using Alice, and if we get Err::BadOrigin, we check if root_can_call
+        // that extrinsic, and if so retry as root
+        let mut origin_sm = OriginStateMachine::new();
+
+        //let mut seen_values = SeenValues::default();
+        //test_mutate(&mut extrinsics, &mut seen_values);
+
+        for extrinsic in extrinsics {
+            match extrinsic {
+                ExtrOrPseudo::Extr(extrinsic) => {
+                    let eww = extrinsic.get_dispatch_info();
+                    if eww.call_weight.ref_time() + eww.extension_weight.ref_time()
+                        >= 2 * WEIGHT_REF_TIME_PER_SECOND
+                    {
+                        // This extrinsic weight is greater than the allowed block weight.
+                        // This is normal, it can happen for:
+                        // * Disabled extrinsics. When an extrinsic benchmark fails, its weight is set
+                        //   to a high value to effectively disable it.
+                        // * High input params. Some extrinsics have a weight that depends on some
+                        //   input. If we set that input to u32::MAX, the weight will also probably be
+                        //   u32::MAX. So we ignore this call.
+                        //log::warn!("Extrinsic would exhaust block weight, skipping");
+                        continue;
+                    }
+
+                    for origin in origin_sm.get_origins(&extrinsic) {
+                        log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
+                        log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
+
+                        let now = Instant::now(); // We get the current time for timing purposes.
+                        #[allow(unused_variables)]
+                        let res = extrinsic.clone().dispatch(origin.clone());
+                        elapsed += now.elapsed();
+
+                        log::debug!(target: "fuzz::result", "    result:     {}", format_dispatch_result(&res));
+
+                        if let Err(e) = &res {
+                            if let DispatchError::BadOrigin = &e.error {
+                                // BadOrigin: retry with next origin
+                                continue;
+                            }
+                        }
+
+                        // By default only try one origin, unless the error is BadOrigin
+                        break;
+                    }
+                }
+                ExtrOrPseudo::Pseudo(fuzz_call) => {
+                    match fuzz_call {
+                        FuzzRuntimeCall::SetOrigin {
+                            origin: new_origin,
+                            retry_as_root,
+                            try_root_first,
+                        } => {
+                            origin_sm.origin = new_origin;
+                            origin_sm.retry_as_root = retry_as_root;
+                            origin_sm.try_root_first = try_root_first;
+                        }
+                        // Set relay data and start a new block
+                        FuzzRuntimeCall::SetRelayData(x) => {
+                            // Disabled
+                            continue;
+                        }
+                        FuzzRuntimeCall::CallRuntimeApi(x) => {
+                            // Disabled because anything related to block building will panic
+                            continue;
+                        }
+                        FuzzRuntimeCall::RecvEthMsg(x) => {
+                            // Unimplemented
+                            continue;
+                        }
+                        FuzzRuntimeCall::NewBlock => {
+                            // Unimplemented
+                            continue;
+                        }
+                        FuzzRuntimeCall::NewSession => {
+                            // Unimplemented
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Disabled this to improve performance
+        /*
+        finalize_block(elapsed);
+        check_invariants(block, initial_total_issuance, block_rewards.get());
+         */
+        // Assert that it is not possible to mint tokens using the allowed extrinsics
+        let final_total_issuance = TotalIssuance::<Runtime>::get();
+        // Some extrinsics burn tokens so final issuance can be lower
+        assert!(
+            initial_total_issuance >= final_total_issuance,
+            "{} >= {}",
+            initial_total_issuance,
+            final_total_issuance
+        );
+    });
+
+    //ext.tracer.print_summary();
 }
 
 /// Start fuzzing a genesis raw spec generated by zombienet.
