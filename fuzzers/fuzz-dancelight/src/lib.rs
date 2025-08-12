@@ -76,6 +76,7 @@ use {
 
 mod genesis;
 mod metadata;
+mod without_storage_root;
 // TODO: extract to separate crate to speed up compilation
 mod simple_backend;
 mod storage_tracer;
@@ -355,6 +356,7 @@ mod create_storage {
 mod read_snapshot {
     use super::*;
     use crate::genesis::invulnerables_from_seeds;
+    use crate::without_storage_root::WithoutStorageRoot;
 
     pub fn read_snapshot(
         chain_spec_json_bytes: &[u8],
@@ -551,6 +553,7 @@ use crate::metadata::{ACCOUNT_ID_TYPE_ID, METADATA, RUNTIME_CALL_TYPE_ID};
 use crate::storage_tracer::TracingExt;
 use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
 use crate::simple_backend::SimpleBackend;
+use crate::without_storage_root::WithoutStorageRoot;
 
 struct PanicOnError;
 
@@ -933,6 +936,8 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig>(data: &[u8]) {
     let backend = SimpleBackend::new(FC::genesis_storage_simple());
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
+    // Not needed here because we never finalize the block
+    let mut ext = WithoutStorageRoot::new(ext);
 
     // Using the fuzzer to check if we need to implement any extra Externalities methods,
     // not using this for tracing.
@@ -1294,6 +1299,8 @@ pub fn fuzz_zombie<FC: FuzzerConfig>(data: &[u8]) {
     let backend = SimpleBackend::new(FC::genesis_storage_simple());
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
+    let mut ext = WithoutStorageRoot::new(ext);
+
     // Using the fuzzer to check if we need to implement any extra Externalities methods,
     // not using this for tracing.
     //let mut ext = TracingExt::new(ext);
@@ -1643,6 +1650,8 @@ pub fn update_snapshot_after_on_initialize(
         TrieBackendBuilder::new_with_cache(storage, root, cache).build();
     let extensions = None;
     let mut ext = Ext::new(&mut overlay, &backend, extensions);
+    // Here let's not mock the storage root, to have a better snapshot
+    // No WithoutStorageRoot
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         use {
             frame_support::migrations::MultiStepMigrator,

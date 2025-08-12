@@ -548,25 +548,8 @@ mod tracing_externalities {
             todo!()
         }
 
-        fn storage_root(&mut self, _state_version: StateVersion) -> Vec<u8> {
-            // TODO: we mock the storage root
-            // This is an attempt to make the fuzzer faster
-            // Ideally this should be part of another Externalities impl, not this one
-            // and this should just call self.inner as usual
-
-            // Mock storage root using block number
-            let block_number = self.inner.storage(&hex::decode("26aa394eea5630e07c48ae0c9558cef702a5c1b19ab7a04f536c519aca4983ac").unwrap()).unwrap();
-            assert_eq!(block_number.len(), 4);
-
-            let mut mocked: Vec<u8> = format!("__FUZZ_MOCK_STORAGE_ROOT_").into();
-            mocked.extend(block_number);
-            assert!(mocked.len() <= 32);
-
-            let mut x = vec![0u8; 32];
-
-            x[0..mocked.len()].copy_from_slice(&mocked);
-
-            x
+        fn storage_root(&mut self, state_version: StateVersion) -> Vec<u8> {
+            self.inner.storage_root(state_version)
         }
 
         fn child_storage_root(
