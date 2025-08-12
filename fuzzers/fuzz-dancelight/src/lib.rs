@@ -557,6 +557,8 @@ use crate::storage_tracer::TracingExt;
 use crate::without_storage_root::WithoutStorageRoot;
 use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
 use parity_scale_codec::WrapperTypeDecode;
+use sp_externalities::Externalities;
+use sp_state_machine::OverlayedChanges;
 
 struct PanicOnError;
 
@@ -707,17 +709,28 @@ static FUZZ_INIT_CALLED: AtomicBool = AtomicBool::new(false);
 pub trait FuzzerConfig {
     // Making this generic to try to support the same trait in different runtimes
     type ExtrOrPseudo;
+    type ExternalitiesParts;
+    type Ext<'a>: Externalities;
 
     fn genesis_storage() -> &'static (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>);
     fn genesis_storage_simple() -> &'static Storage;
 
     fn extrinsics_filter(x: &Self::ExtrOrPseudo) -> bool;
+
+    fn externalities_parts() -> Self::ExternalitiesParts;
+    fn ext_new(parts: &mut Self::ExternalitiesParts) -> Self::Ext<'_>;
 }
 
 pub struct FuzzLiveOneblock;
 
 impl FuzzerConfig for FuzzLiveOneblock {
     type ExtrOrPseudo = ExtrOrPseudo;
+    type ExternalitiesParts = (
+        OverlayedChanges<BlakeTwo256>,
+        SimpleBackend,
+        Option<sp_externalities::Extensions>,
+    );
+    type Ext<'a> = WithoutStorageRoot<Ext<'a, BlakeTwo256, SimpleBackend>>;
 
     fn genesis_storage() -> &'static (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
         lazy_static::lazy_static! {
@@ -753,12 +766,41 @@ impl FuzzerConfig for FuzzLiveOneblock {
     fn extrinsics_filter(x: &Self::ExtrOrPseudo) -> bool {
         default_extrinsics_filter(x)
     }
+
+    fn externalities_parts() -> Self::ExternalitiesParts {
+        use sp_runtime::traits::BlakeTwo256;
+        use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
+        let mut overlay = OverlayedChanges::<BlakeTwo256>::default();
+        let (storage, root, shared_cache) = Self::genesis_storage();
+        let root = *root;
+        let cache = shared_cache.local_cache();
+        //let mut backend: TrieBackend<_, BlakeTwo256> =
+        //    TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+        let backend = SimpleBackend::new(Self::genesis_storage_simple());
+        let extensions = None;
+
+        (overlay, backend, extensions)
+    }
+
+    fn ext_new(parts: &mut Self::ExternalitiesParts) -> Self::Ext<'_> {
+        let mut ext = Ext::new(&mut parts.0, &parts.1, parts.2.as_mut());
+        // Not needed here because we never finalize the block
+        let mut ext = WithoutStorageRoot::new(ext);
+
+        ext
+    }
 }
 
 pub struct FuzzZombie;
 
 impl FuzzerConfig for FuzzZombie {
     type ExtrOrPseudo = ExtrOrPseudo;
+    type ExternalitiesParts = (
+        OverlayedChanges<BlakeTwo256>,
+        SimpleBackend,
+        Option<sp_externalities::Extensions>,
+    );
+    type Ext<'a> = WithoutStorageRoot<Ext<'a, BlakeTwo256, SimpleBackend>>;
 
     fn genesis_storage() -> &'static (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
         lazy_static::lazy_static! {
@@ -789,6 +831,28 @@ impl FuzzerConfig for FuzzZombie {
     }
     fn extrinsics_filter(x: &Self::ExtrOrPseudo) -> bool {
         default_extrinsics_filter(x)
+    }
+    fn externalities_parts() -> Self::ExternalitiesParts {
+        use sp_runtime::traits::BlakeTwo256;
+        use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
+        let mut overlay = OverlayedChanges::<BlakeTwo256>::default();
+        let (storage, root, shared_cache) = Self::genesis_storage();
+        let root = *root;
+        let cache = shared_cache.local_cache();
+        //let mut backend: TrieBackend<_, BlakeTwo256> =
+        //    TrieBackendBuilder::new_with_cache(storage, root, cache).build();
+        let backend = SimpleBackend::new(Self::genesis_storage_simple());
+        let extensions = None;
+
+        (overlay, backend, extensions)
+    }
+
+    fn ext_new(parts: &mut Self::ExternalitiesParts) -> Self::Ext<'_> {
+        let mut ext = Ext::new(&mut parts.0, &parts.1, parts.2.as_mut());
+        // Not needed here because we never finalize the block
+        let mut ext = WithoutStorageRoot::new(ext);
+
+        ext
     }
 }
 
@@ -858,19 +922,8 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
     //println!("{:?}", extrinsics);
     let mut elapsed = Duration::ZERO;
 
-    use sp_runtime::traits::BlakeTwo256;
-    use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
-    let mut overlay = OverlayedChanges::<BlakeTwo256>::default();
-    let (storage, root, shared_cache) = FC::genesis_storage();
-    let root = *root;
-    let cache = shared_cache.local_cache();
-    //let mut backend: TrieBackend<_, BlakeTwo256> =
-    //    TrieBackendBuilder::new_with_cache(storage, root, cache).build();
-    let backend = SimpleBackend::new(FC::genesis_storage_simple());
-    let extensions = None;
-    let mut ext = Ext::new(&mut overlay, &backend, extensions);
-    // Not needed here because we never finalize the block
-    let mut ext = WithoutStorageRoot::new(ext);
+    let mut ext_parts = FC::externalities_parts();
+    let mut ext = FC::ext_new(&mut ext_parts);
 
     // Using the fuzzer to check if we need to implement any extra Externalities methods,
     // not using this for tracing.
@@ -1197,19 +1250,8 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
 
     let mut block_state = BlockState::initial();
 
-    use sp_runtime::traits::BlakeTwo256;
-
-    use sp_state_machine::{Ext, OverlayedChanges, TrieBackendBuilder};
-    let mut overlay = OverlayedChanges::<BlakeTwo256>::default();
-    let (storage, root, shared_cache) = FC::genesis_storage();
-    let root = *root;
-    let cache = shared_cache.local_cache();
-    //let mut backend: TrieBackend<_, BlakeTwo256> =
-    //    TrieBackendBuilder::new_with_cache(storage, root, cache).build();
-    let backend = SimpleBackend::new(FC::genesis_storage_simple());
-    let extensions = None;
-    let mut ext = Ext::new(&mut overlay, &backend, extensions);
-    let mut ext = WithoutStorageRoot::new(ext);
+    let mut ext_parts = FC::externalities_parts();
+    let mut ext = FC::ext_new(&mut ext_parts);
 
     // Using the fuzzer to check if we need to implement any extra Externalities methods,
     // not using this for tracing.
