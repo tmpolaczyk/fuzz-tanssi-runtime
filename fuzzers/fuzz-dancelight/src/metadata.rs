@@ -1,7 +1,6 @@
 use dancelight_runtime::Runtime;
 use frame_metadata::v15::RuntimeMetadataV15;
 use frame_metadata::{RuntimeMetadata, RuntimeMetadataPrefixed};
-use lazy_static::lazy_static;
 use parity_scale_codec::Decode;
 use scale_info::PortableRegistry;
 use std::collections::HashMap;

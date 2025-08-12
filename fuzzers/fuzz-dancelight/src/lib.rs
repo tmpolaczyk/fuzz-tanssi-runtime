@@ -6,72 +6,63 @@
 //!
 //! Based on https://github.com/srlabs/substrate-runtime-fuzzer/blob/2a42a8b750aff0e12eb0e09b33aea9825a40595a/runtimes/kusama/src/main.rs
 
+use crate::create_storage::ext_to_simple_storage;
+use crate::genesis::invulnerables_from_seeds;
+use crate::metadata::{ACCOUNT_ID_TYPE_ID, METADATA, RUNTIME_CALL_TYPE_ID};
+use crate::simple_backend::SimpleBackend;
+use crate::storage_tracer::TracingExt;
+use crate::without_storage_root::WithoutStorageRoot;
 use dancelight_runtime::{Session, System};
 use frame_support::dispatch::DispatchResultWithPostInfo;
 use frame_support::traits::CallerTrait;
 use itertools::{EitherOrBoth, Itertools};
 use libfuzzer_sys::arbitrary;
 use libfuzzer_sys::arbitrary::{Arbitrary, Unstructured};
-use std::collections::HashMap;
+use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
+use sp_externalities::Externalities;
+use sp_state_machine::OverlayedChanges;
 use std::sync::Mutex;
 use {
-    cumulus_primitives_core::ParaId,
     dancelight_runtime::{
         AccountId, AllPalletsWithSystem, Balance, Balances, CollatorsInflationRatePerBlock,
-        ContainerRegistrar, Executive, ExternalValidators, Header, InflationRewards,
-        MultiBlockMigrations, OriginCaller, ParaInherent, Runtime, RuntimeCall, RuntimeOrigin,
-        Timestamp, UncheckedExtrinsic, ValidatorsInflationRatePerEra,
-        genesis_config_presets::get_authority_keys_from_seed,
+        ContainerRegistrar, Executive, ExternalValidators, Header, MultiBlockMigrations,
+        ParaInherent, Runtime, RuntimeCall, RuntimeOrigin, Timestamp, UncheckedExtrinsic,
+        ValidatorsInflationRatePerEra,
     },
     dancelight_runtime_constants::time::SLOT_DURATION,
-    dp_container_chain_genesis_data::ContainerChainGenesisData,
-    dp_core::well_known_keys::PARAS_HEADS_INDEX,
-    frame_metadata::{RuntimeMetadata, RuntimeMetadataPrefixed, v15::RuntimeMetadataV15},
     frame_support::{
-        Hashable,
         dispatch::{CallableCallFor as CallableCallForG, GetDispatchInfo},
         pallet_prelude::Weight,
         storage::unhashed,
-        traits::{Currency, IntegrityTest, OriginTrait, TryState, TryStateSelect},
+        traits::{IntegrityTest, OriginTrait, TryState, TryStateSelect},
         weights::constants::WEIGHT_REF_TIME_PER_SECOND,
     },
     frame_system::Account,
-    nimbus_primitives::{NIMBUS_ENGINE_ID, NimbusId},
     pallet_balances::{Holds, TotalIssuance},
-    pallet_configuration::HostConfiguration,
     parity_scale_codec::{DecodeLimit, Encode},
-    polkadot_core_primitives::{BlockNumber, Signature},
-    primitives::{SchedulerParams, ValidationCode},
     rand::{Rng, SeedableRng, seq::IndexedRandom},
-    scale_info::{PortableRegistry, TypeInfo},
+    scale_info::TypeInfo,
     scale_value::{Composite, ValueDef},
-    sp_consensus_aura::{AURA_ENGINE_ID, Slot},
+    sp_consensus_aura::Slot,
     sp_consensus_babe::{
         BABE_ENGINE_ID,
         digests::{PreDigest, SecondaryPlainPreDigest},
     },
-    sp_core::{Decode, Get, H256, Pair, Public, sr25519},
-    sp_inherents::InherentDataProvider,
+    sp_core::{Decode, H256},
     sp_runtime::{
-        Digest, DigestItem, DispatchError, Perbill, Saturating, Storage,
-        traits::{BlakeTwo256, Dispatchable, Header as HeaderT, IdentifyAccount, Verify},
+        Digest, DigestItem, DispatchError, Storage,
+        traits::{BlakeTwo256, Dispatchable, Header as HeaderT},
     },
-    sp_state_machine::{
-        BasicExternalities, Ext, LayoutV1, MemoryDB, TrieBackend, TrieBackendBuilder,
-    },
+    sp_state_machine::{Ext, LayoutV1, MemoryDB, TrieBackend, TrieBackendBuilder},
     sp_storage::StateVersion,
     sp_trie::{
         GenericMemoryDB,
         cache::{CacheSize, SharedTrieCache},
     },
     std::{
-        any::TypeId,
-        cell::Cell,
-        cmp::max,
         collections::BTreeMap,
         io::Write,
         iter,
-        marker::PhantomData,
         sync::{Arc, atomic::AtomicBool},
         time::{Duration, Instant},
     },
@@ -549,16 +540,6 @@ pub enum ExtrOrPseudo {
                     Pre dispatch weight: Weight { ref_time: 3097114602, proof_size: 276453 },
                     Post dispatch weight: Weight { ref_time: 3099021404, proof_size: 276453 }
 */
-use crate::create_storage::ext_to_simple_storage;
-use crate::genesis::invulnerables_from_seeds;
-use crate::metadata::{ACCOUNT_ID_TYPE_ID, METADATA, RUNTIME_CALL_TYPE_ID};
-use crate::simple_backend::SimpleBackend;
-use crate::storage_tracer::TracingExt;
-use crate::without_storage_root::WithoutStorageRoot;
-use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
-use parity_scale_codec::WrapperTypeDecode;
-use sp_externalities::Externalities;
-use sp_state_machine::OverlayedChanges;
 
 struct PanicOnError;
 

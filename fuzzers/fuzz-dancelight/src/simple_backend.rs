@@ -1,13 +1,11 @@
-use parity_scale_codec::Encode;
-use sp_core::{Blake2Hasher, Hasher};
+use sp_core::Hasher;
 use sp_state_machine::{
     Backend, BackendTransaction, IterArgs, StateMachineStats, StorageIterator, StorageKey,
     StorageValue, TrieBackendStorage, UsageInfo,
 };
 use sp_storage::{ChildInfo, StateVersion, Storage};
 use std::ops::Bound::{Excluded, Included, Unbounded};
-use std::sync::Arc;
-use trie_db::{DBValue, MerkleValue, TrieDBRawIterator};
+use trie_db::{DBValue, MerkleValue};
 
 pub struct SimpleBackend {
     base: &'static Storage,
