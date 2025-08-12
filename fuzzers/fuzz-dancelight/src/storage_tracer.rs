@@ -201,6 +201,9 @@ mod tracing_externalities {
                 BlockContext::TryState => 5,
             }
         }
+        pub fn iter() -> impl ExactSizeIterator<Item = BlockContext> {
+            (0..=5).map(|x| BlockContext::from_u8(x))
+        }
     }
 
     #[derive(Debug)]
@@ -809,28 +812,15 @@ impl StorageTracer {
     /// Like `print_histograms`, but shows per-context RW flags for each key
     /// in a fixed order: [OnInitialize, Inherents, ExtrinsicSigned, ExtrinsicRoot, OnFinalize].
     pub fn print_histograms_by_context(&self) {
-        use BlockContext::*;
-
-        const ORDER: [BlockContext; 6] = [
-            OnInitialize,
-            Inherents,
-            ExtrinsicRoot,
-            ExtrinsicSigned,
-            OnFinalize,
-            TryState,
-        ];
-
         fn tokens_line(
             key: &[u8],
-            order: &[BlockContext; 6],
             rb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
             wb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
         ) -> String {
-            order
-                .iter()
+            BlockContext::iter()
                 .map(|ctx| {
-                    let r = rb.get(ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
-                    let w = wb.get(ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
+                    let r = rb.get(&ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
+                    let w = wb.get(&ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
                     let rch = if r > 0 { 'R' } else { '-' };
                     let wch = if w > 0 { 'W' } else { '-' };
                     format!("{}{}", rch, wch)
@@ -841,7 +831,6 @@ impl StorageTracer {
 
         fn print_top_with_context(
             flat: &HashMap<Vec<u8>, u32>,
-            order: &[BlockContext; 6],
             rb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
             wb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
             heading: &str,
@@ -866,7 +855,7 @@ impl StorageTracer {
             println!("{heading}");
             println!("Legend per context [Init Inh Root Sig Fin Try]: R=read, W=write, -=none");
             for (key, count) in topk.iter() {
-                let tokens = tokens_line(key, order, rb, wb);
+                let tokens = tokens_line(key, rb, wb);
                 // 17 = 6 tokens * 2 chars + 5 spaces between them
                 println!("{:<17} {:>8}  {}", tokens, count, unhash_storage_key(key));
                 println!("{:>17}      {}", "", hex::encode(key));
@@ -875,7 +864,6 @@ impl StorageTracer {
 
         print_top_with_context(
             &self.top_reads,
-            &ORDER,
             &self.top_reads_by_ctx,
             &self.top_writes_by_ctx,
             "Top most frequent reads (with per-context RW presence)",
@@ -884,7 +872,6 @@ impl StorageTracer {
         println!();
         print_top_with_context(
             &self.top_writes,
-            &ORDER,
             &self.top_reads_by_ctx,
             &self.top_writes_by_ctx,
             "Top most frequent writes (with per-context RW presence)",
@@ -941,31 +928,19 @@ impl StorageTracer {
     /// Alphabetical listing of all keys with per-context RW flags.
     /// Context order: [OnInitialize, Inherents, ExtrinsicSigned, ExtrinsicRoot, OnFinalize].
     pub fn print_all_keys_alphabetical_by_context(&self) {
-        use BlockContext::*;
-        const ORDER: [BlockContext; 6] = [
-            OnInitialize,
-            Inherents,
-            ExtrinsicRoot,
-            ExtrinsicSigned,
-            OnFinalize,
-            TryState,
-        ];
-
         fn trim_32(k: &[u8]) -> &[u8] {
             if k.len() > 32 { &k[..32] } else { k }
         }
 
         fn tokens_for_key(
             key: &[u8],
-            order: &[BlockContext; 6],
             rb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
             wb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
         ) -> String {
-            order
-                .iter()
+            BlockContext::iter()
                 .map(|ctx| {
-                    let r = rb.get(ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
-                    let w = wb.get(ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
+                    let r = rb.get(&ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
+                    let w = wb.get(&ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
                     let rch = if r > 0 { 'R' } else { '-' };
                     let wch = if w > 0 { 'W' } else { '-' };
                     format!("{}{}", rch, wch)
@@ -996,7 +971,7 @@ impl StorageTracer {
         // Build entries from the union of keys seen anywhere.
         let mut v: Vec<((String, String), String)> = Vec::new();
         let mut push_key = |k: &Vec<u8>| {
-            let tokens = tokens_for_key(k, &ORDER, &self.top_reads_by_ctx, &self.top_writes_by_ctx);
+            let tokens = tokens_for_key(k, &self.top_reads_by_ctx, &self.top_writes_by_ctx);
             let pretty = unhash_storage_key(k);
             let hex32 = format!("0x{}", hex::encode(trim_32(k)));
             v.push(((pretty, hex32), tokens));
