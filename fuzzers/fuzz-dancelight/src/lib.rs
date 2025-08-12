@@ -830,19 +830,20 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
             .filter(FC::extrinsics_filter)
             .collect();
 
-    if extrinsics.is_empty() {
+    if extrinsics.iter().all(|x| match x {
+        ExtrOrPseudo::Extr(_) => false,
+        ExtrOrPseudo::Pseudo(_) => true,
+    }) {
+        // empty extrinsics or all extrinsics pseudo: do not test
         return;
     }
 
     //println!("{:?}", extrinsics);
+
     let mut elapsed = Duration::ZERO;
 
     let mut ext_parts = FC::externalities_parts();
     let mut ext = FC::ext_new(&mut ext_parts);
-
-    // Using the fuzzer to check if we need to implement any extra Externalities methods,
-    // not using this for tracing.
-    //let mut ext = TracingExt::new(ext);
 
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
@@ -974,7 +975,11 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
             .filter(FC::extrinsics_filter)
             .collect();
 
-    if extrinsics.is_empty() {
+    if extrinsics.iter().all(|x| match x {
+        ExtrOrPseudo::Extr(_) => false,
+        ExtrOrPseudo::Pseudo(_) => true,
+    }) {
+        // empty extrinsics or all extrinsics pseudo: do not test
         return;
     }
 
@@ -985,9 +990,6 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
     let mut ext_parts = FC::externalities_parts();
     let mut ext = FC::ext_new(&mut ext_parts);
 
-    // Using the fuzzer to check if we need to implement any extra Externalities methods,
-    // not using this for tracing.
-    //let mut ext = TracingExt::new(ext);
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
 
