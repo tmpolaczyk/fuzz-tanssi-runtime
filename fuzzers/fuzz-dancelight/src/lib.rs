@@ -1119,6 +1119,9 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
 
         initialize_block(&mut block_state);
 
+        let num_events_before = System::events().len();
+        let mut num_events_before_inner = System::events().len();
+
         // Origin is kind of like a state machine
         // By default we try using Alice, and if we get Err::BadOrigin, we check if root_can_call
         // that extrinsic, and if so retry as root
@@ -1150,6 +1153,9 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
                         continue;
                     }
 
+                    let mut extr_ok = false;
+                    let mut is_root = false;
+                    num_events_before_inner = System::events().len();
                     for origin in origin_sm.get_origins(&extrinsic) {
                         block_state.weight.saturating_accrue(eww.call_weight);
                         block_state.weight.saturating_accrue(eww.extension_weight);
@@ -1175,8 +1181,10 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
                         log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
 
                         if origin.caller.is_root() {
+                            is_root = true;
                             ExtStorageTracer::set_block_context(BlockContext::ExtrinsicRoot);
                         } else {
+                            is_root = false;
                             ExtStorageTracer::set_block_context(BlockContext::ExtrinsicSigned);
                         }
 
@@ -1184,6 +1192,7 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
                         #[allow(unused_variables)]
                         let res = extrinsic.clone().dispatch(origin.clone());
                         block_state.elapsed += now.elapsed();
+                        extr_ok |= res.is_ok();
 
                         log::debug!(target: "fuzz::result", "    result:     {}", format_dispatch_result(&res));
 
@@ -1197,6 +1206,8 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
                         // By default only try one origin, unless the error is BadOrigin
                         break;
                     }
+
+                    FC::after_each_extr(&extrinsic, &mut num_events_before_inner, extr_ok, is_root);
                 }
                 ExtrOrPseudo::Pseudo(fuzz_call) => {
                     match fuzz_call {
