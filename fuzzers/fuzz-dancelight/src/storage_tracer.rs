@@ -911,7 +911,7 @@ impl StorageTracer {
             if a == b { a } else { "RW" }
         }
 
-        v.dedup_by(|a, b| {
+        v.dedup_by(|b, a| {
             if a.0 == b.0 {
                 a.1 = merge_vals(a.1, b.1); // mutate the first value
                 true // drop `b`
@@ -996,7 +996,7 @@ impl StorageTracer {
 
         // Sort and merge display-collisions.
         v.sort();
-        v.dedup_by(|a, b| {
+        v.dedup_by(|b, a| {
             if a.0 == b.0 {
                 a.1 = merge_tokens(&a.1, &b.1);
                 true

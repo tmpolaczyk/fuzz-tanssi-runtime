@@ -401,7 +401,13 @@ pub trait FuzzerConfig {
 
     fn externalities_parts() -> Self::ExternalitiesParts;
     fn ext_new(parts: &mut Self::ExternalitiesParts) -> Self::Ext<'_>;
-    fn after_each_extr(extrinsic: &RuntimeCall, num_events_before: &mut usize, extr_ok: bool) {}
+    fn after_each_extr(
+        extrinsic: &RuntimeCall,
+        num_events_before: &mut usize,
+        extr_ok: bool,
+        is_root: bool,
+    ) {
+    }
     fn after_all(ext: Self::Ext<'_>) {}
 }
 
@@ -444,8 +450,13 @@ impl<FC: FuzzerConfig> FuzzerConfig for TraceStorage<FC> {
         let ext = FC::ext_new(parts);
         TracingExt::new(ext)
     }
-    fn after_each_extr(extrinsic: &RuntimeCall, num_events_before: &mut usize, extr_ok: bool) {
-        FC::after_each_extr(extrinsic, num_events_before, extr_ok)
+    fn after_each_extr(
+        extrinsic: &RuntimeCall,
+        num_events_before: &mut usize,
+        extr_ok: bool,
+        is_root: bool,
+    ) {
+        FC::after_each_extr(extrinsic, num_events_before, extr_ok, is_root)
     }
     fn after_all(ext: Self::Ext<'_>) {
         let mut storage_tracer = STORAGE_TRACER.lock().unwrap();
@@ -482,7 +493,12 @@ impl<FC: FuzzerConfig> FuzzerConfig for TraceEvents<FC> {
         let ext = FC::ext_new(parts);
         TracingExt::new(ext)
     }
-    fn after_each_extr(extrinsic: &RuntimeCall, num_events_before: &mut usize, extr_ok: bool) {
+    fn after_each_extr(
+        extrinsic: &RuntimeCall,
+        num_events_before: &mut usize,
+        extr_ok: bool,
+        is_root: bool,
+    ) {
         let events_all = System::events();
         let (_, events) = events_all.split_at(*num_events_before);
 
@@ -500,7 +516,7 @@ impl<FC: FuzzerConfig> FuzzerConfig for TraceEvents<FC> {
             for event in events {
                 let x_enc = event.encode();
                 let first_2_bytes = (x_enc[0], x_enc[1]);
-                event_tracer.insert(first_2_bytes, || {
+                event_tracer.insert(first_2_bytes, is_root, || {
                     let evn_name = event_name_from_idx(first_2_bytes);
                     //format!("{} {} {:?}", evn_name.0, evn_name.1, event)
                     format!("{} {}", evn_name.0, evn_name.1)
@@ -514,14 +530,14 @@ impl<FC: FuzzerConfig> FuzzerConfig for TraceEvents<FC> {
             let x_enc = extrinsic.encode();
             let first_2_bytes = (x_enc[0], x_enc[1]);
             let mut ok_extrinsics = EXTR_TRACER.lock().unwrap();
-            ok_extrinsics.insert(first_2_bytes, || {
+            ok_extrinsics.insert(first_2_bytes, is_root, || {
                 let evn_name = call_name_from_idx(first_2_bytes);
                 //format!("{} {} {:?}", evn_name.0, evn_name.1, event)
                 format!("{} {}", evn_name.0, evn_name.1)
             });
         }
 
-        FC::after_each_extr(extrinsic, num_events_before, extr_ok)
+        FC::after_each_extr(extrinsic, num_events_before, extr_ok, is_root)
     }
     fn after_all(ext: Self::Ext<'_>) {
         FC::after_all(ext.into_inner())
@@ -974,13 +990,16 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
                     }
 
                     let mut extr_ok = false;
+                    let mut is_root = false;
                     for origin in origin_sm.get_origins(&extrinsic) {
                         log::debug!(target: "fuzz::origin", "\n    origin:     {origin:?}");
                         log::debug!(target: "fuzz::call", "    call:       {extrinsic:?}");
 
                         if origin.caller.is_root() {
+                            is_root = true;
                             ExtStorageTracer::set_block_context(BlockContext::ExtrinsicRoot);
                         } else {
+                            is_root = false;
                             ExtStorageTracer::set_block_context(BlockContext::ExtrinsicSigned);
                         }
 
@@ -1003,7 +1022,7 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
                         break;
                     }
 
-                    FC::after_each_extr(&extrinsic, &mut num_events_before_inner, extr_ok);
+                    FC::after_each_extr(&extrinsic, &mut num_events_before_inner, extr_ok, is_root);
                 }
                 ExtrOrPseudo::Pseudo(fuzz_call) => {
                     match fuzz_call {
