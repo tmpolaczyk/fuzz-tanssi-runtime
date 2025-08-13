@@ -1112,6 +1112,8 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
 
+        let first_era = ExternalValidators::current_era().unwrap();
+
         block_state.block = System::block_number();
         let last_timestamp = pallet_timestamp::Now::<Runtime>::get();
         // Technically this should be last_timestamp / slot_duration, but this also works
@@ -1132,8 +1134,9 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
 
         for extrinsic in extrinsics {
             if block_state.num_created_blocks >= 200 {
-                // Hard limit of 200 blocks, hopefully its enough to test all the Era stuff
-                assert!(block_state.last_era > 2, "{:?}", block_state.last_era);
+                // Hard limit of 200 blocks, hopefully its enough to test all the Era stuff.
+                // We use fast-runtime so 1 era = 3 sessions and 1 session = 10 blocks.
+                assert!(block_state.last_era - first_era > 2, "{:?}", block_state.last_era);
                 break;
             }
             match extrinsic {
