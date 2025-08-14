@@ -31,6 +31,8 @@ impl ExtrTracer {
                 false
             }
         });
+        // Sort again by event name
+        seen_events.sort_by_key(|(k, v)| *v);
         for ((first_2_bytes, prefix), event) in seen_events {
             //println!("{} {:3} {:3} {}", prefix, first_2_bytes.0, first_2_bytes.1, event);
             println!("{} {}", prefix, event);
