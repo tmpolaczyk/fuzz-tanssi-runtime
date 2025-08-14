@@ -1,12 +1,14 @@
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use fuzz_dancelight::{
-    EVENT_TRACER, EXTR_TRACER, ExtrOrPseudo, FuzzLiveOneblock, FuzzZombie, STORAGE_TRACER,
-    StorageTracer, TraceEvents, TraceStorage, extrinsics_iter, fuzz_decode_calls, fuzz_init,
-    fuzz_init_only_logger, fuzz_live_oneblock, fuzz_zombie,
+    EVENT_TRACER, EXTR_TRACER, ExtrOrPseudo, FuzzLiveOneblock, FuzzRuntimeCall, FuzzZombie,
+    STORAGE_TRACER, StorageTracer, TraceEvents, TraceStorage, example_runtime_call,
+    extrinsics_iter, fuzz_decode_calls, fuzz_init, fuzz_init_only_logger, fuzz_live_oneblock,
+    fuzz_zombie,
 };
 use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
 use scale_info::TypeInfo;
+use scale_info::scale::Encode;
 use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
 
@@ -67,6 +69,9 @@ enum Commands {
         #[arg(long)]
         input_path: String,
     },
+
+    /// Decode a corpus input
+    EncodeInput {},
 
     /// Decode a corpus input
     DecodeInputWatch {
@@ -193,6 +198,22 @@ fn main() -> Result<()> {
             for x in extr {
                 println!("{:?}", x);
             }
+            Ok(())
+        }
+        Commands::EncodeInput {} => {
+            let mut extr: Vec<ExtrOrPseudo> =
+                vec![ExtrOrPseudo::Pseudo(FuzzRuntimeCall::NewBlock); 250];
+
+            extr.push(ExtrOrPseudo::Extr(example_runtime_call()));
+
+            let encoded: Vec<u8> = extr.iter().map(|x| x.encode()).flatten().collect();
+            assert_eq!(
+                extrinsics_iter(&encoded).collect::<Vec<ExtrOrPseudo>>(),
+                extr
+            );
+
+            std::fs::write("encoded_input_test", encoded)?;
+
             Ok(())
         }
 

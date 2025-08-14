@@ -322,7 +322,7 @@ lazy_static::lazy_static! {
     };
 }
 
-#[derive(Debug, Encode, Decode, TypeInfo, Clone)]
+#[derive(Debug, Encode, Decode, TypeInfo, Clone, PartialEq, Eq)]
 pub enum FuzzRuntimeCall {
     SetOrigin {
         // Default: 0 (signed origin)
@@ -344,10 +344,19 @@ pub enum FuzzRuntimeCall {
     NewSession,
 }
 
-#[derive(Debug, Encode, Decode, TypeInfo, Clone)]
+#[derive(Debug, Encode, Decode, TypeInfo, Clone, PartialEq, Eq)]
 pub enum ExtrOrPseudo {
     Extr(RuntimeCall),
     Pseudo(FuzzRuntimeCall),
+}
+
+pub fn example_runtime_call() -> RuntimeCall {
+    // System remark doesn't work because it is filtered by default_extrinsics_filter
+    //RuntimeCall::System(CallableCallFor::<System>::remark { remark: vec![1, 2, 3] })
+    RuntimeCall::Balances(CallableCallFor::<Balances>::transfer_keep_alive {
+        dest: (*ALICE).clone().into(),
+        value: 0,
+    })
 }
 
 // Attempt to panic on this error log
@@ -944,6 +953,7 @@ pub fn initialize_block(state: &mut BlockState) {
         let mut new_era = false;
         if era_index > state.last_era {
             new_era = true;
+            state.last_era = era_index;
         }
         if new_era {
             let new_supply_validators =
@@ -1273,8 +1283,10 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
                 // We use fast-runtime so 1 era = 3 sessions and 1 session = 10 blocks.
                 assert!(
                     block_state.last_era - first_era > 2,
-                    "{:?}",
-                    block_state.last_era
+                    "Expected era index to advance after {} blocks, but it is stuck at {} (initial: {})",
+                    block_state.num_created_blocks,
+                    block_state.last_era,
+                    first_era,
                 );
                 break;
             }
