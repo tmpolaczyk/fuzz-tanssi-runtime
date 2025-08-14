@@ -191,7 +191,13 @@ fn root_can_call(call: &RuntimeCall) -> bool {
         RuntimeCall::EthereumTokenTransfers(x) => true,
         RuntimeCall::ForeignAssetsCreator(x) => true,
         RuntimeCall::ForeignAssets(x) => true,
-        RuntimeCall::Beefy(x) => true,
+        RuntimeCall::Beefy(x) => match x {
+            /*
+            attempt to add with overflow
+             */
+            CallableCallFor::<dancelight_runtime::Beefy>::set_new_genesis { delay_in_blocks } => *delay_in_blocks < (u32::MAX / 2),
+            _ => true,
+        },
         _ => false,
     }
 }
@@ -1136,7 +1142,11 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
             if block_state.num_created_blocks >= 200 {
                 // Hard limit of 200 blocks, hopefully its enough to test all the Era stuff.
                 // We use fast-runtime so 1 era = 3 sessions and 1 session = 10 blocks.
-                assert!(block_state.last_era - first_era > 2, "{:?}", block_state.last_era);
+                assert!(
+                    block_state.last_era - first_era > 2,
+                    "{:?}",
+                    block_state.last_era
+                );
                 break;
             }
             match extrinsic {
