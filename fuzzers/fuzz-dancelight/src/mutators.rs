@@ -179,6 +179,9 @@ where
     }
 }
 
+// TODO: crossover and mutate operations would be more efficient if we had some delimited extrinsic
+// format such as the old one. Because then we don't need to decode anything, we can reorder
+// extrinsics faster.
 pub fn fuzz_crossover_extr_or_pseudo(
     data1: &[u8],
     data2: &[u8],

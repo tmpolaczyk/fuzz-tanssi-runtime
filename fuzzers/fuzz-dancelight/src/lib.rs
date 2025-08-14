@@ -88,6 +88,7 @@ mod storage_tracer;
 
 use crate::event_tracer::EventTracer;
 use crate::extr_tracer::ExtrTracer;
+pub use mutators::*;
 pub use storage_tracer::StorageTracer;
 
 type CallableCallFor<A, R = Runtime> = CallableCallForG<A, R>;
@@ -125,8 +126,6 @@ fn recursively_find_call(call: &RuntimeCall, matches_on: fn(&RuntimeCall) -> boo
 /// Return true if the root origin can execute this extrinsic.
 /// Any extrinsic that could brick the chain should be disabled, we only want to test real-world scenarios.
 fn root_can_call(call: &RuntimeCall) -> bool {
-    // TODO: for storage tracing fuzz_live_oneblock: disable root extrinsics
-    //return false;
     match call {
         // Allow root to call any pallet_registrar extrinsic, as it is unlikely to brick the chain
         // TODO: except register(1000), because that may actually break some things
