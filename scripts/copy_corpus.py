@@ -56,8 +56,8 @@ def main():
     ap = argparse.ArgumentParser(
         description="Copy missing corpus files from dancelight to starlight (rsync fast path; naive fallback)."
     )
-    ap.add_argument("--src", default=SRC_DEFAULT, help="Source corpus directory")
-    ap.add_argument("--dst", default=DST_DEFAULT, help="Destination corpus directory")
+    ap.add_argument("--src", help="Source corpus directory")
+    ap.add_argument("--dst", help="Destination corpus directory")
     args = ap.parse_args()
 
     src = Path(args.src)
