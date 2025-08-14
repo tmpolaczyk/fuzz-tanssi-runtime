@@ -3560,7 +3560,9 @@ dependencies = [
  "sp-state-machine",
  "sp-storage",
  "sp-trie",
+ "test-relay-sproof-builder",
  "tokio",
+ "tp-traits",
  "trie-db",
 ]
 

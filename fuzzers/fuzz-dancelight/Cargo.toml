@@ -45,6 +45,8 @@ sp-state-machine = { workspace = true }
 sp-storage = { workspace = true }
 sp-trie = { workspace = true }
 trie-db = { workspace = true }
+test-relay-sproof-builder = { workspace = true, features = ["std"] }
+tp-traits = { workspace = true }
 
 # fix missing feature error
 tokio = { workspace = true, features = ["net"]}

@@ -15,16 +15,19 @@ use crate::metadata::{
 use crate::simple_backend::SimpleBackend;
 use crate::storage_tracer::{BlockContext, ExtStorageTracer, TracingExt};
 use crate::without_storage_root::WithoutStorageRoot;
-use dancelight_runtime::{Session, System};
+use dancelight_runtime::{AuthorNoting, Session, System, TanssiCollatorAssignment};
 use frame_support::dispatch::DispatchResultWithPostInfo;
 use frame_support::traits::CallerTrait;
 use itertools::{EitherOrBoth, Itertools};
 use libfuzzer_sys::arbitrary;
 use libfuzzer_sys::arbitrary::{Arbitrary, Unstructured};
 use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
+use sp_consensus_aura::AURA_ENGINE_ID;
 use sp_externalities::Externalities;
 use sp_state_machine::OverlayedChanges;
 use std::sync::Mutex;
+use test_relay_sproof_builder::{HeaderAs, ParaHeaderSproofBuilder, ParaHeaderSproofBuilderItem};
+use tp_traits::ForSession;
 use {
     dancelight_runtime::{
         AccountId, AllPalletsWithSystem, Balance, Balances, CollatorsInflationRatePerBlock,
@@ -186,6 +189,13 @@ fn root_can_call(call: &RuntimeCall) -> bool {
             [Extr(RuntimeCall::EthereumSystem(Call::set_pricing_parameters { params: PricingParameters { exchange_rate: FixedU128(49374304219900875090.764158725393818943), rewards: Rewards { local: 49374304219900874850019441219996034341, remote: 233163559363069177235500382025972612914986316744954254533925 }, fee_per_gas: 16801205105022349924204417432633147414003880127955689684156590579914555523072, multiplier: FixedU128(49374304219900875090.764158725393818917) } }))]
              */
             CallableCallFor::<dancelight_runtime::EthereumSystem>::set_pricing_parameters { .. } => false,
+            /*
+            Overflow when calculating max gas:
+            thread '<unnamed>' panicked at /home/tomasz/.cargo/git/checkouts/polkadot-sdk-649406df3f6b052f/1158dd6/bridges/snowbridge/primitives/outbound-queue/src/v1/message.rs:341:3:
+attempt to add with overflow
+            Extr(RuntimeCall::EthereumSystem(Call::upgrade { impl_address: 0x00000000000000000000001000e11a6a33190df5, impl_code_hash: 0x28cea25070debd8681e11afff800006328cea25070debd86810000006300540b, initializer: Some(Initializer { params: [], maximum_required_gas: 18446744073709486080 }) }))
+             */
+            CallableCallFor::<dancelight_runtime::EthereumSystem>::upgrade { initializer, .. } if initializer.is_some() && initializer.as_ref().unwrap().maximum_required_gas > (u64::MAX / 2) => false,
             _ => true,
         },
         RuntimeCall::EthereumTokenTransfers(x) => true,
@@ -755,6 +765,129 @@ impl BlockState {
     }
 }
 
+/*
+
+#[test]
+fn test_reward_to_invulnerable() {
+    execute_with(|| {
+        // Let's get the inflation of the block.
+        let summary = run_block();
+
+        // Calculate Bob's rewards.
+        let all_rewards = RewardsPortion::get() * summary.inflation;
+        let bob_rewards = all_rewards / 2;
+
+        let mut sproof = ParaHeaderSproofBuilder::default();
+        let slot: u64 = 5;
+        let other_para: ParaId = 1001u32.into();
+
+        // In starlight there is no orchestrator chain, so instead of Charlie and Dave
+        // we assign Alice and Bob.
+        let assignment = TanssiCollatorAssignment::collator_container_chain();
+        assert_eq!(
+            assignment.container_chains[&1001u32.into()],
+            vec![ALICE.into(), BOB.into()]
+        );
+
+        // Build the proof needed to call AuthorNoting's inherent.
+        let s = ParaHeaderSproofBuilderItem {
+            para_id: other_para,
+            author_id: HeaderAs::NonEncoded(sp_runtime::generic::Header::<u32, BlakeTwo256> {
+                parent_hash: Default::default(),
+                number: 1,
+                state_root: Default::default(),
+                extrinsics_root: Default::default(),
+                digest: sp_runtime::generic::Digest {
+                    logs: vec![DigestItem::PreRuntime(AURA_ENGINE_ID, slot.encode())],
+                },
+            }),
+        };
+        sproof.items.push(s);
+
+        let account: AccountId = BOB.into();
+        let balance_before = System::account(account.clone()).data.free;
+
+        // We need to set the AuthorNoting's inherent for it to also run
+        // InflationRewards::on_container_authors_noted and reward the collator.
+        set_author_noting_inherent_data(sproof);
+
+        assert_eq!(
+            AuthorNoting::latest_author(other_para),
+            Some(ContainerChainBlockInfo {
+                block_number: 1,
+                author: AccountId::from(BOB),
+                latest_slot_number: 2.into(),
+            })
+        );
+
+        let balance_after = System::account(account).data.free;
+
+        assert_eq!(
+            bob_rewards,
+            balance_after - balance_before,
+            "bob should get the correct reward portion"
+        );
+    });
+}
+ */
+
+pub fn mock_inherent_author_noting(state: &mut BlockState) {
+    use tp_traits::GetContainerChainsWithCollators;
+
+    let mut sproof = ParaHeaderSproofBuilder::default();
+
+    let registered_paras =
+        TanssiCollatorAssignment::container_chains_with_collators(ForSession::Current);
+
+    for (para_id, _collators) in registered_paras {
+        // TODO: allow to skip some paras for some blocks, use a flag in BlockState to decide
+        let prev_info = AuthorNoting::latest_author(para_id);
+        let prev_number = prev_info
+            .as_ref()
+            .map(|info| info.block_number)
+            .unwrap_or(0);
+        // Build the proof needed to call AuthorNoting's inherent.
+        let s = ParaHeaderSproofBuilderItem {
+            para_id,
+            author_id: HeaderAs::NonEncoded(sp_runtime::generic::Header::<u32, BlakeTwo256> {
+                parent_hash: Default::default(),
+                // number needs to increase for the para to get rewarded
+                // I believe in a relay chain context this can never increase by more than 1
+                number: prev_number + 1,
+                state_root: Default::default(),
+                extrinsics_root: Default::default(),
+                digest: sp_runtime::generic::Digest {
+                    // slot is not used I believe
+                    logs: vec![DigestItem::PreRuntime(AURA_ENGINE_ID, state.slot.encode())],
+                },
+            }),
+        };
+        sproof.items.push(s);
+    }
+
+    set_author_noting_inherent_data(sproof)
+}
+
+/// This function is different in solochains: instead of creating a storage proof and calling the
+/// `set_latest_author_data` inherent with that proof as argument, this writes to storage directly.
+pub fn set_author_noting_inherent_data(builder: ParaHeaderSproofBuilder) {
+    for (k, v) in builder.key_values() {
+        frame_support::storage::unhashed::put_raw(&k, &v);
+    }
+
+    /*
+    assert_ok!(RuntimeCall::AuthorNoting(
+        pallet_author_noting::Call::<Runtime>::set_latest_author_data { data: () }
+    )
+    .dispatch(inherent_origin()));
+     */
+    Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
+        CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data { data: () },
+    )))
+    .unwrap()
+    .unwrap();
+}
+
 pub fn initialize_block(state: &mut BlockState) {
     state.block += 1;
     state.num_created_blocks += 1;
@@ -825,13 +958,8 @@ pub fn initialize_block(state: &mut BlockState) {
     ExtStorageTracer::set_block_context(BlockContext::Inherents);
 
     Timestamp::set(RuntimeOrigin::none(), state.slot * SLOT_DURATION).unwrap();
-    state.slot += 1;
 
-    Executive::apply_extrinsic(UncheckedExtrinsic::new_unsigned(RuntimeCall::AuthorNoting(
-        CallableCallFor::<dancelight_runtime::AuthorNoting>::set_latest_author_data { data: () },
-    )))
-    .unwrap()
-    .unwrap();
+    mock_inherent_author_noting(state);
 
     ParaInherent::enter(
         RuntimeOrigin::none(),
@@ -843,6 +971,8 @@ pub fn initialize_block(state: &mut BlockState) {
         },
     )
     .unwrap();
+
+    state.slot += 1;
 }
 
 pub fn finalize_block(state: &mut BlockState) {

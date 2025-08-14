@@ -24,6 +24,7 @@ dancelight-runtime-constants = { path = "../tanssi/chains/orchestrator-relays/ru
 starlight-runtime = { path = "../tanssi/chains/orchestrator-relays/runtime/starlight", default-features = false }
 starlight-runtime-constants = { path = "../tanssi/chains/orchestrator-relays/runtime/starlight/constants/", default-features = false }
 pallet-configuration = { path = "../tanssi/pallets/configuration", default-features = false }
+tp-traits = { path = "../tanssi/primitives/traits", default-features = false }
 
 cumulus-primitives-core = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2503", default-features = false }
 frame-support = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2503", default-features = false }
@@ -52,6 +53,7 @@ sp-trie = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch =
 
 dp-container-chain-genesis-data = { git = "https://github.com/moondance-labs/dancekit", branch = "tanssi-polkadot-stable2503", default-features = false }
 dp-core = { git = "https://github.com/moondance-labs/dancekit", branch = "tanssi-polkadot-stable2503", default-features = false, features = [ "std" ] }
+test-relay-sproof-builder = { git = "https://github.com/moondance-labs/dancekit", branch = "tanssi-polkadot-stable2503", default-features = false }
 
 bitvec = { version = "1.0.1", default-features = false, features = [ "alloc" ] }
 frame-metadata = "16"
