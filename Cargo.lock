@@ -2083,12 +2083,10 @@ dependencies = [
  "pallet-beefy",
  "pallet-beefy-mmr",
  "pallet-collator-assignment",
- "pallet-collective",
  "pallet-configuration",
  "pallet-conviction-voting",
  "pallet-data-preservers",
- "pallet-democracy",
- "pallet-elections-phragmen",
+ "pallet-data-preservers-runtime-api",
  "pallet-ethereum-token-transfers",
  "pallet-external-validator-slashes",
  "pallet-external-validators",
@@ -2102,7 +2100,6 @@ dependencies = [
  "pallet-initializer",
  "pallet-invulnerables",
  "pallet-maintenance-mode",
- "pallet-membership",
  "pallet-message-queue",
  "pallet-migrations 0.1.0",
  "pallet-migrations 10.1.0",
@@ -2128,7 +2125,6 @@ dependencies = [
  "pallet-stream-payment-runtime-api",
  "pallet-sudo",
  "pallet-timestamp",
- "pallet-tips",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc-runtime-api",
  "pallet-treasury",
@@ -6448,7 +6444,6 @@ dependencies = [
  "serde",
  "sp-core",
  "sp-runtime",
- "tp-traits",
 ]
 
 [[package]]
@@ -6612,23 +6607,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-collective"
-version = "40.1.0"
-source = "git+https://github.com/moondance-labs/polkadot-sdk?branch=tanssi-polkadot-stable2503#1158dd68f19ec8e8a0e5cf5caeeee3682233e16e"
-dependencies = [
- "docify",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "parity-scale-codec",
- "scale-info",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
 name = "pallet-configuration"
 version = "0.1.0"
 dependencies = [
@@ -6669,7 +6647,6 @@ dependencies = [
  "frame-support",
  "frame-system",
  "log",
- "nimbus-primitives",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -6679,20 +6656,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-democracy"
-version = "40.1.0"
-source = "git+https://github.com/moondance-labs/polkadot-sdk?branch=tanssi-polkadot-stable2503#1158dd68f19ec8e8a0e5cf5caeeee3682233e16e"
+name = "pallet-data-preservers-runtime-api"
+version = "0.1.0"
 dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-core",
- "sp-io",
- "sp-runtime",
+ "sp-api",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -6731,24 +6702,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-elections-phragmen"
-version = "41.1.0"
-source = "git+https://github.com/moondance-labs/polkadot-sdk?branch=tanssi-polkadot-stable2503#1158dd68f19ec8e8a0e5cf5caeeee3682233e16e"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "parity-scale-codec",
- "scale-info",
- "sp-core",
- "sp-io",
- "sp-npos-elections",
- "sp-runtime",
- "sp-staking",
-]
-
-[[package]]
 name = "pallet-ethereum-token-transfers"
 version = "0.1.0"
 dependencies = [
@@ -6760,7 +6713,6 @@ dependencies = [
  "pallet-session",
  "parity-scale-codec",
  "polkadot-primitives",
- "polkadot-runtime-parachains",
  "scale-info",
  "snowbridge-core",
  "snowbridge-merkle-tree",
@@ -7004,22 +6956,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-membership"
-version = "40.0.0"
-source = "git+https://github.com/moondance-labs/polkadot-sdk?branch=tanssi-polkadot-stable2503#1158dd68f19ec8e8a0e5cf5caeeee3682233e16e"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "parity-scale-codec",
- "scale-info",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
 name = "pallet-message-queue"
 version = "43.1.0"
 source = "git+https://github.com/moondance-labs/polkadot-sdk?branch=tanssi-polkadot-stable2503#1158dd68f19ec8e8a0e5cf5caeeee3682233e16e"
@@ -7146,7 +7082,6 @@ dependencies = [
 name = "pallet-pooled-staking"
 version = "0.1.0"
 dependencies = [
- "dp-core",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
@@ -7248,7 +7183,6 @@ version = "0.1.0"
 dependencies = [
  "dp-container-chain-genesis-data",
  "frame-support",
- "pallet-registrar",
  "parity-scale-codec",
  "scale-info",
  "sp-api",
@@ -7366,7 +7300,6 @@ dependencies = [
 name = "pallet-stream-payment"
 version = "0.1.0"
 dependencies = [
- "dp-core",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
@@ -7376,8 +7309,6 @@ dependencies = [
  "serde",
  "sp-core",
  "sp-runtime",
- "tp-maths",
- "tp-traits",
 ]
 
 [[package]]
@@ -7423,24 +7354,6 @@ dependencies = [
  "sp-runtime",
  "sp-storage",
  "sp-timestamp",
-]
-
-[[package]]
-name = "pallet-tips"
-version = "39.0.0"
-source = "git+https://github.com/moondance-labs/polkadot-sdk?branch=tanssi-polkadot-stable2503#1158dd68f19ec8e8a0e5cf5caeeee3682233e16e"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "pallet-treasury",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "sp-core",
- "sp-io",
- "sp-runtime",
 ]
 
 [[package]]
@@ -11876,6 +11789,7 @@ dependencies = [
  "nimbus-primitives",
  "pallet-alt-benchmarks",
  "pallet-asset-rate",
+ "pallet-assets",
  "pallet-author-noting",
  "pallet-author-noting-runtime-api",
  "pallet-authority-assignment",
@@ -11887,17 +11801,16 @@ dependencies = [
  "pallet-beefy",
  "pallet-beefy-mmr",
  "pallet-collator-assignment",
- "pallet-collective",
  "pallet-configuration",
  "pallet-conviction-voting",
  "pallet-data-preservers",
- "pallet-democracy",
- "pallet-elections-phragmen",
+ "pallet-data-preservers-runtime-api",
  "pallet-ethereum-token-transfers",
  "pallet-external-validator-slashes",
  "pallet-external-validators",
  "pallet-external-validators-rewards",
  "pallet-external-validators-rewards-runtime-api",
+ "pallet-foreign-asset-creator",
  "pallet-grandpa",
  "pallet-identity",
  "pallet-inactivity-tracking",
@@ -11905,7 +11818,6 @@ dependencies = [
  "pallet-initializer",
  "pallet-invulnerables",
  "pallet-maintenance-mode",
- "pallet-membership",
  "pallet-message-queue",
  "pallet-migrations 0.1.0",
  "pallet-migrations 10.1.0",
@@ -11931,7 +11843,6 @@ dependencies = [
  "pallet-stream-payment-runtime-api",
  "pallet-sudo",
  "pallet-timestamp",
- "pallet-tips",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc-runtime-api",
  "pallet-treasury",
@@ -12277,7 +12188,7 @@ dependencies = [
  "pallet-external-validator-slashes",
  "pallet-external-validators",
  "pallet-foreign-asset-creator",
- "pallet-invulnerables",
+ "pallet-inactivity-tracking",
  "pallet-migrations 0.1.0",
  "pallet-pooled-staking",
  "pallet-registrar",
@@ -12294,9 +12205,11 @@ dependencies = [
  "snowbridge-pallet-inbound-queue",
  "snowbridge-pallet-system",
  "sp-core",
+ "sp-io",
  "sp-runtime",
  "sp-staking",
  "staging-xcm",
+ "staging-xcm-executor",
 ]
 
 [[package]]
