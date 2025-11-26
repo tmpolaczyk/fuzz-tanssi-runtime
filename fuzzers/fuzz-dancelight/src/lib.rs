@@ -604,7 +604,7 @@ impl FuzzerConfig for FuzzLiveOneblock {
                 let mut overlay = OverlayedChanges::default();
                 let (storage, root, shared_cache) = FuzzLiveOneblock::genesis_storage();
                 let root = *root;
-                let cache = shared_cache.local_cache();
+                let cache = shared_cache.local_cache_untrusted();
                 let mut backend: TrieBackend<_, BlakeTwo256> =
                     TrieBackendBuilder::new_with_cache(storage, root, cache).build();
                 let extensions = None;
@@ -626,7 +626,7 @@ impl FuzzerConfig for FuzzLiveOneblock {
         let mut overlay = OverlayedChanges::<BlakeTwo256>::default();
         let (storage, root, shared_cache) = Self::genesis_storage();
         let root = *root;
-        let cache = shared_cache.local_cache();
+        let cache = shared_cache.local_cache_untrusted();
         //let mut backend: TrieBackend<_, BlakeTwo256> =
         //    TrieBackendBuilder::new_with_cache(storage, root, cache).build();
         let backend = SimpleBackend::new(Self::genesis_storage_simple());
@@ -671,7 +671,7 @@ impl FuzzerConfig for FuzzZombie {
                 let mut overlay = OverlayedChanges::default();
                 let (storage, root, shared_cache) = FuzzZombie::genesis_storage();
                 let root = *root;
-                let cache = shared_cache.local_cache();
+                let cache = shared_cache.local_cache_untrusted();
                 let mut backend: TrieBackend<_, BlakeTwo256> =
                     TrieBackendBuilder::new_with_cache(storage, root, cache).build();
                 let extensions = None;
@@ -691,7 +691,7 @@ impl FuzzerConfig for FuzzZombie {
         let mut overlay = OverlayedChanges::<BlakeTwo256>::default();
         let (storage, root, shared_cache) = Self::genesis_storage();
         let root = *root;
-        let cache = shared_cache.local_cache();
+        let cache = shared_cache.local_cache_untrusted();
         //let mut backend: TrieBackend<_, BlakeTwo256> =
         //    TrieBackendBuilder::new_with_cache(storage, root, cache).build();
         let backend = SimpleBackend::new(Self::genesis_storage_simple());
@@ -1473,7 +1473,7 @@ pub fn update_snapshot_after_on_initialize(
     let input_snapshot_bytes = std::fs::read(input_snapshot_path).unwrap();
     let (storage, root, shared_cache) = &read_snapshot::read_snapshot(&input_snapshot_bytes);
     let root = *root;
-    let cache = shared_cache.local_cache();
+    let cache = shared_cache.local_cache_untrusted();
     let mut backend: TrieBackend<_, BlakeTwo256> =
         TrieBackendBuilder::new_with_cache(storage, root, cache).build();
     let extensions = None;
@@ -1565,7 +1565,7 @@ pub fn fuzz_init<FC: FuzzerConfig>() {
     let mut overlay = OverlayedChanges::default();
     let (storage, root, shared_cache) = FC::genesis_storage();
     let root = *root;
-    let cache = shared_cache.local_cache();
+    let cache = shared_cache.local_cache_untrusted();
     let backend: TrieBackend<_, BlakeTwo256> =
         TrieBackendBuilder::new_with_cache(storage, root, cache).build();
     let extensions = None;

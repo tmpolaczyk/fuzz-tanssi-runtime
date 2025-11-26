@@ -17,7 +17,7 @@ pub fn create_storage(
         .unwrap();
 
     let mut storage = backend.into_storage();
-    let mut cache2 = shared_cache.local_cache();
+    let mut cache2 = shared_cache.local_cache_untrusted();
     //let mut root_decoded: H256 = Decode::decode(&mut root1.as_slice()).unwrap();
     let mut root_mut = root.clone();
     let mut triedbmut: TrieDBMut<LayoutV1<BlakeTwo256>> =

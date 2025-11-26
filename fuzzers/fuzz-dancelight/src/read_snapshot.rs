@@ -71,8 +71,8 @@ pub fn read_snapshot(
 
     let mut overlay = Default::default();
     //let cache_provider = trie_cache::CacheProvider::new();
-    let shared_cache = SharedTrieCache::new(CacheSize::new(400_000));
-    let cache = shared_cache.local_cache();
+    let shared_cache = SharedTrieCache::new(CacheSize::new(400_000), None);
+    let cache = shared_cache.local_cache_untrusted();
     let mut backend: TrieBackend<_, BlakeTwo256> =
         TrieBackendBuilder::new_with_cache(storage, root, cache).build();
 
