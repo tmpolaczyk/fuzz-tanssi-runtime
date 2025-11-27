@@ -2,7 +2,7 @@ use crate::metadata::unhash_storage_key;
 use crate::storage_tracer::tracing_externalities::ReadOrWrite;
 pub use crate::storage_tracer::tracing_externalities::TracingExt;
 use many_to_many::ManyToMany;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::{cmp::max, sync::Arc};
 
 pub type CallIndex = (u8, u8);
@@ -166,7 +166,6 @@ mod tracing_externalities {
     use sp_externalities::{Error, Extension, ExtensionStore, Externalities, MultiRemovalResults};
     use sp_storage::{ChildInfo, StateVersion, TrackedStorageKey};
     use std::any::{Any, TypeId};
-    use std::backtrace::Backtrace;
     use std::collections::HashSet;
 
     #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
@@ -211,7 +210,11 @@ mod tracing_externalities {
         Read(Vec<u8>, usize),
         Write(Vec<u8>, Vec<u8>),
         Remove(Vec<u8>),
-        Append(Vec<u8>, Vec<u8>),
+        Append {
+            key: Vec<u8>,
+            old_value: Vec<u8>,
+            to_append: Vec<u8>,
+        },
         KillPrefix(Vec<u8>),
         KillPrefixPartial(Vec<u8>, Vec<u8>),
         StartTransaction,
@@ -317,12 +320,17 @@ mod tracing_externalities {
         fn mark_append<K: Into<Vec<u8>> + AsRef<[u8]> + std::hash::Hash + Eq, V: Into<Vec<u8>>>(
             &mut self,
             key: K,
-            val: V,
+            old_value: V,
+            to_append: V,
         ) {
             if self.whitelisted.contains(key.as_ref()) {
                 return;
             }
-            self.trace.push(ReadOrWrite::Append(key.into(), val.into()));
+            self.trace.push(ReadOrWrite::Append {
+                key: key.into(),
+                old_value: old_value.into(),
+                to_append: to_append.into(),
+            });
         }
         fn mark_kill_prefix<
             K: Into<Vec<u8>> + AsRef<[u8]> + std::hash::Hash + Eq,
@@ -370,10 +378,15 @@ mod tracing_externalities {
                         let key_hex = hex::encode(k);
                         println!("DELETE {}", key_hex);
                     }
-                    ReadOrWrite::Append(k, v) => {
-                        let key_hex = hex::encode(k);
-                        let val_hex = hex::encode(v);
-                        println!("APPEND {} : {}", key_hex, val_hex);
+                    ReadOrWrite::Append {
+                        key,
+                        old_value,
+                        to_append,
+                    } => {
+                        let key_hex = hex::encode(key);
+                        let old_val_hex = hex::encode(old_value);
+                        let to_append_hex = hex::encode(to_append);
+                        println!("APPEND {} : {} ++ {}", key_hex, old_val_hex, to_append_hex);
                     }
                     ReadOrWrite::KillPrefix(k) => {
                         let key_hex = hex::encode(k);
@@ -559,7 +572,11 @@ mod tracing_externalities {
         }
 
         fn storage_append(&mut self, key: Vec<u8>, value: Vec<u8>) {
-            self.tracer.mark_append(key.as_slice(), value.as_slice());
+            // Read the value to track read size as well as write size
+            // A value that doesn't exist is the same as empty
+            let old_value = self.inner.storage(&key).unwrap_or_default();
+            self.tracer
+                .mark_append(key.as_slice(), old_value.as_slice(), value.as_slice());
             self.inner.storage_append(key, value)
         }
 
@@ -628,6 +645,8 @@ pub struct StorageTracer {
     biggest_reads: HashMap<Vec<u8>, u32>,
     // histogram of key => size_of_biggest_write
     biggest_writes: HashMap<Vec<u8>, u32>,
+    // list of keys that use storage::append
+    appended_keys: HashSet<Vec<u8>>,
 }
 
 impl StorageTracer {
@@ -715,7 +734,10 @@ impl StorageTracer {
                         .or_default()
                         .entry(key.clone())
                         .or_insert(0) += 1;
-                    let bw = self.biggest_writes.entry(trim_32(key).to_vec()).or_insert(0);
+                    let bw = self
+                        .biggest_writes
+                        .entry(trim_32(key).to_vec())
+                        .or_insert(0);
                     *bw = max(*bw, value.len() as u32);
                 }
                 ReadOrWrite::Remove(key) => {
@@ -726,10 +748,27 @@ impl StorageTracer {
                         .or_default()
                         .entry(key.clone())
                         .or_insert(0) += 1;
-                    let bw = self.biggest_writes.entry(trim_32(key).to_vec()).or_insert(0);
+                    let bw = self
+                        .biggest_writes
+                        .entry(trim_32(key).to_vec())
+                        .or_insert(0);
                     *bw = max(*bw, 0);
                 }
-                ReadOrWrite::Append(key, value) => {
+                ReadOrWrite::Append {
+                    key,
+                    old_value,
+                    to_append,
+                } => {
+                    // We count append as read+write
+
+                    *self.top_reads.entry(key.clone()).or_insert(0) += 1;
+                    *self
+                        .top_reads_by_ctx
+                        .entry(current_context)
+                        .or_default()
+                        .entry(key.clone())
+                        .or_insert(0) += 1;
+
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
                     *self
                         .top_writes_by_ctx
@@ -737,9 +776,17 @@ impl StorageTracer {
                         .or_default()
                         .entry(key.clone())
                         .or_insert(0) += 1;
-                    let bw = self.biggest_writes.entry(trim_32(key).to_vec()).or_insert(0);
-                    // TODO: append could maybe be size = size + new, but not sure
-                    *bw = max(*bw, value.len() as u32);
+
+                    let br = self.biggest_reads.entry(trim_32(key).to_vec()).or_insert(0);
+                    *br = max(*br, old_value.len() as u32);
+                    let bw = self
+                        .biggest_writes
+                        .entry(trim_32(key).to_vec())
+                        .or_insert(0);
+                    *bw = max(*bw, old_value.len() as u32 + to_append.len() as u32);
+
+                    // In any case, let's keep track of which keys use storage::append
+                    self.appended_keys.insert(key.clone());
                 }
                 ReadOrWrite::KillPrefix(key) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
@@ -760,7 +807,10 @@ impl StorageTracer {
                         .or_default()
                         .entry(key.clone())
                         .or_insert(0) += 1;
-                    let bw = self.biggest_writes.entry(trim_32(key).to_vec()).or_insert(0);
+                    let bw = self
+                        .biggest_writes
+                        .entry(trim_32(key).to_vec())
+                        .or_insert(0);
                     *bw = max(*bw, 0);
                 }
                 ReadOrWrite::StartTransaction => {}
@@ -811,6 +861,13 @@ impl StorageTracer {
             "Top biggest storage writes in bytes",
             6,
         );
+        println!();
+        println!(
+            "Keys that use storage::append feature (stats may be off for these because we convert them into read + write)"
+        );
+        for key in self.appended_keys.iter() {
+            println!("{:<74} {}", unhash_storage_key(&key), hex::encode(key));
+        }
     }
 
     /// Like `print_histograms`, but shows per-context RW flags for each key
@@ -908,16 +965,17 @@ impl StorageTracer {
             6,
         );
         println!();
-        print_top(
-            &self.biggest_reads,
-            "Top biggest storage reads in bytes",
-            6,
-        );
+        print_top(&self.biggest_reads, "Top biggest storage reads in bytes", 6);
         print_top(
             &self.biggest_writes,
             "Top biggest storage writes in bytes",
             6,
         );
+        println!();
+        println!("keys that use storage::append feature");
+        for key in self.appended_keys.iter() {
+            println!("{:<32} {}", unhash_storage_key(&key), hex::encode(key));
+        }
     }
 
     pub fn print_all_keys_alphabetical(&self) {
@@ -1044,6 +1102,34 @@ impl StorageTracer {
             }
         });
 
+        println!(
+            r#"\
+List of seen storage keys, in alphabetical order.
+All keys trimmed to the first 32 bytes, so we see 1 entry per storage map.
+Indicates during which phase of block execution the key was seen:
+Init: on_initialize
+Inh: inherents
+Root: extrinsic with root origin
+Sig: extrinsic with signed origin. Only checked once at the start.
+    Sudo is disabled, but if it worked it would count as signed origin
+Fin: on_finalize
+Try: try_state checks. So this is not on-chain.
+    It includes pallet try_state and checks done by the fuzzer. Also includes fuzzer initialization code.
+
+Examples:
+-W RW -- -- R- -- this is a flag set on on_initialize, then read and written in inherents, and finally read again in on_finalize
+-- RW -W -- -- -- this is read and written in inherents, and then root origin can also write to it using an extrinsic
+even though root origin can write to any storage key, in the fuzzer config we disable arbitrary writes and only whitelist
+some very specific extrinsics that should not affect execution.
+-- -- -- RW -- -- this is a signed extrinsic that's not used on-chain, common for stuff like identity pallet
+R- -- RW R- R- -- this is a flag that can be written by root, and then it's used by signed origin extrinsics
+for example it may enable or disable a pallet feature.
+
+Note: some fuzzers skip the on_initialize and on_finalize step, so if no storage keys are being used there
+it means that the fuzzer is skipping that part.
+"#
+        );
+        println!();
         println!("Legend for context [Init Inh Root Sig Fin Try]: R=read, W=write, -=none");
         for ((k1, k2), tokens) in v {
             // 17 = "RW RW RW RW RW RW"

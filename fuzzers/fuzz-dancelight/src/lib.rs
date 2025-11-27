@@ -1113,6 +1113,7 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
     let mut ext = FC::ext_new(&mut ext_parts);
 
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
+        ExtStorageTracer::set_block_context(BlockContext::TryState);
         // The snapshot is saved after the initial on_initialize
         //initialize_block(block);
 
@@ -1272,6 +1273,7 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
     let mut ext = FC::ext_new(&mut ext_parts);
 
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
+        ExtStorageTracer::set_block_context(BlockContext::TryState);
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
 
         let first_era = ExternalValidators::current_era().unwrap();
