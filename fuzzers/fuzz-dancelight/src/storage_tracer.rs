@@ -972,9 +972,11 @@ impl StorageTracer {
             6,
         );
         println!();
-        println!("keys that use storage::append feature");
+        println!(
+            "Keys that use storage::append feature (stats may be off for these because we convert them into read + write)"
+        );
         for key in self.appended_keys.iter() {
-            println!("{:<32} {}", unhash_storage_key(&key), hex::encode(key));
+            println!("{:<74} {}", unhash_storage_key(&key), hex::encode(key));
         }
     }
 
