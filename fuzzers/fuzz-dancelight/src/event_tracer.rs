@@ -33,6 +33,7 @@ impl EventTracer {
         });
         // Sort again by event name
         seen_events.sort_by_key(|(k, v)| *v);
+        println!("Legend for context R=root origin, S=signed origin");
         for ((first_2_bytes, prefix), event) in seen_events {
             //println!("{} {:3} {:3} {}", prefix, first_2_bytes.0, first_2_bytes.1, event);
             println!("{} {}", prefix, event);

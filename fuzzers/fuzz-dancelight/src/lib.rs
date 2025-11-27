@@ -105,7 +105,11 @@ fn recursively_find_call(call: &RuntimeCall, matches_on: fn(&RuntimeCall) -> boo
                 return true;
             }
         }
-    } else if let RuntimeCall::Utility(CallableCallFor::<dancelight_runtime::Utility>::if_else { main, fallback }) = call {
+    } else if let RuntimeCall::Utility(CallableCallFor::<dancelight_runtime::Utility>::if_else {
+        main,
+        fallback,
+    }) = call
+    {
         for call in [main, fallback] {
             if recursively_find_call(call, matches_on) {
                 return true;

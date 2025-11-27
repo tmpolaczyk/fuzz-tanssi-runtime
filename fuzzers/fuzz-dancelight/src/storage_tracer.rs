@@ -608,6 +608,10 @@ mod tracing_externalities {
     }
 }
 
+fn trim_32(k: &[u8]) -> &[u8] {
+    if k.len() > 32 { &k[..32] } else { k }
+}
+
 #[derive(Default, Debug)]
 pub struct StorageTracer {
     readers: ManyToMany<CallIndex, StorageKey>,
@@ -700,7 +704,7 @@ impl StorageTracer {
                         .or_default()
                         .entry(key.clone())
                         .or_insert(0) += 1;
-                    let bw = self.biggest_reads.entry(key.clone()).or_insert(0);
+                    let bw = self.biggest_reads.entry(trim_32(key).to_vec()).or_insert(0);
                     *bw = max(*bw, *size as u32);
                 }
                 ReadOrWrite::Write(key, value) => {
@@ -711,7 +715,7 @@ impl StorageTracer {
                         .or_default()
                         .entry(key.clone())
                         .or_insert(0) += 1;
-                    let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
+                    let bw = self.biggest_writes.entry(trim_32(key).to_vec()).or_insert(0);
                     *bw = max(*bw, value.len() as u32);
                 }
                 ReadOrWrite::Remove(key) => {
@@ -722,7 +726,7 @@ impl StorageTracer {
                         .or_default()
                         .entry(key.clone())
                         .or_insert(0) += 1;
-                    let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
+                    let bw = self.biggest_writes.entry(trim_32(key).to_vec()).or_insert(0);
                     *bw = max(*bw, 0);
                 }
                 ReadOrWrite::Append(key, value) => {
@@ -733,7 +737,7 @@ impl StorageTracer {
                         .or_default()
                         .entry(key.clone())
                         .or_insert(0) += 1;
-                    let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
+                    let bw = self.biggest_writes.entry(trim_32(key).to_vec()).or_insert(0);
                     // TODO: append could maybe be size = size + new, but not sure
                     *bw = max(*bw, value.len() as u32);
                 }
@@ -756,7 +760,7 @@ impl StorageTracer {
                         .or_default()
                         .entry(key.clone())
                         .or_insert(0) += 1;
-                    let bw = self.biggest_writes.entry(key.clone()).or_insert(0);
+                    let bw = self.biggest_writes.entry(trim_32(key).to_vec()).or_insert(0);
                     *bw = max(*bw, 0);
                 }
                 ReadOrWrite::StartTransaction => {}
@@ -801,11 +805,11 @@ impl StorageTracer {
         println!();
         print_top(&self.top_writes, "Top most frequent writes", 6);
         println!();
-        print_top(&self.biggest_reads, "Top biggest storage reads in bytes", 3);
+        print_top(&self.biggest_reads, "Top biggest storage reads in bytes", 6);
         print_top(
             &self.biggest_writes,
             "Top biggest storage writes in bytes",
-            3,
+            6,
         );
     }
 
@@ -853,12 +857,38 @@ impl StorageTracer {
             topk.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
             println!("{heading}");
-            println!("Legend per context [Init Inh Root Sig Fin Try]: R=read, W=write, -=none");
+            println!("Legend for context [Init Inh Root Sig Fin Try]: R=read, W=write, -=none");
             for (key, count) in topk.iter() {
                 let tokens = tokens_line(key, rb, wb);
                 // 17 = 6 tokens * 2 chars + 5 spaces between them
                 println!("{:<17} {:>8}  {}", tokens, count, unhash_storage_key(key));
                 println!("{:>17}      {}", "", hex::encode(key));
+            }
+        }
+        fn print_top(map: &HashMap<Vec<u8>, u32>, heading: &str, top_k: usize) {
+            let mut items: Vec<(&[u8], u32)> =
+                map.iter().map(|(k, &v)| (k.as_slice(), v)).collect();
+
+            if items.is_empty() {
+                println!("<empty>");
+                return;
+            }
+            let k = top_k.min(items.len());
+
+            // Partition so the largest k elements (by count, then key) are in the last k slots.
+            let nth_index = items.len() - k;
+            items.select_nth_unstable_by(nth_index, |a, b| {
+                // Ascending for the partition step (so biggest end up to the right)
+                a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0))
+            });
+            // Sort only the top-k slice for deterministic, pretty output (count desc, key asc).
+            let topk = &mut items[nth_index..];
+            topk.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+            println!("{heading}");
+            for (key, count) in topk.iter() {
+                println!("{:>8}  {}", count, unhash_storage_key(key));
+                println!("          {}", hex::encode(key));
             }
         }
 
@@ -875,6 +905,17 @@ impl StorageTracer {
             &self.top_reads_by_ctx,
             &self.top_writes_by_ctx,
             "Top most frequent writes (with per-context RW presence)",
+            6,
+        );
+        println!();
+        print_top(
+            &self.biggest_reads,
+            "Top biggest storage reads in bytes",
+            6,
+        );
+        print_top(
+            &self.biggest_writes,
+            "Top biggest storage writes in bytes",
             6,
         );
     }
@@ -894,9 +935,7 @@ impl StorageTracer {
             .into_iter()
             .map(|(k, v)| {
                 let mut pretty_key = unhash_storage_key(k);
-                fn trim_32(k: &[u8]) -> &[u8] {
-                    if k.len() > 32 { &k[..32] } else { k }
-                }
+
                 ((pretty_key, format!("0x{}", hex::encode(trim_32(k)))), v)
             })
             .collect();
@@ -1005,7 +1044,7 @@ impl StorageTracer {
             }
         });
 
-        println!("Legend per context [Init Inh Root Sig Fin Try]: R=read, W=write, -=none");
+        println!("Legend for context [Init Inh Root Sig Fin Try]: R=read, W=write, -=none");
         for ((k1, k2), tokens) in v {
             // 17 = "RW RW RW RW RW RW"
             println!("{:<17} {:56} {}", tokens, k1, k2);
