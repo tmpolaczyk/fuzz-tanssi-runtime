@@ -16,7 +16,7 @@ PRESETS = {
         "runtime": "dancelight",
     },
     "dancelight": {
-        "uri": "wss://dancelight.tanssi-api.network",
+        "uri": "wss://services.tanssi-testnet.network/dancelight",
         "runtime": "dancelight",
     },
     "moonlight": {

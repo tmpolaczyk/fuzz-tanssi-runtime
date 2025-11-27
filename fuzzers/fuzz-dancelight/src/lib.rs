@@ -275,7 +275,7 @@ fn get_origin(origin: usize) -> &'static AccountId {
 
 fn genesis_storage_from_snapshot() -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
     const EXPORTED_STATE_CHAIN_SPEC_JSON: &[u8] =
-        include_bytes!("../../../snapshots/dancelight-2025-08-12.json");
+        include_bytes!("../../../snapshots/dancelight-2025-11-26.json");
 
     read_snapshot::read_snapshot(EXPORTED_STATE_CHAIN_SPEC_JSON)
 }
@@ -735,14 +735,21 @@ pub fn is_disabled_call(x: &RuntimeCall) -> bool {
                  ))).unwrap_or(false)
          )
         */
-        matches!(call.clone(), RuntimeCall::System(_))
+        matches!(&call, RuntimeCall::System(_))
             || matches!(
-                &call,
-                RuntimeCall::Referenda(CallableCallFor::<dancelight_runtime::Referenda>::submit {
-                    proposal_origin: matching_origin,
-                    ..
-                }) if RuntimeOrigin::from(*matching_origin.clone()).caller().is_root()
-            )
+            &call,
+            RuntimeCall::Referenda(CallableCallFor::<dancelight_runtime::Referenda>::submit {
+                proposal_origin: matching_origin,
+                ..
+            }) if RuntimeOrigin::from(*matching_origin.clone()).caller().is_root()
+        )
+            // 0 fee triggers debug_assert
+            // debug_assert_ne!(amount, 0);
+            // thread '<unnamed>' panicked at /home/tomasz/.cargo/git/checkouts/polkadot-sdk-649406df3f6b052f/f504b17/polkadot/xcm/src/v5/asset.rs:306:9:
+            || matches!(&call, RuntimeCall::EthereumTokenTransfers(CallableCallFor::<dancelight_runtime::EthereumTokenTransfers>::add_tip {
+            amount, ..
+        }) if *amount == 0
+        )
     })
 }
 

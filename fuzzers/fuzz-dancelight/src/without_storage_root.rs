@@ -104,12 +104,8 @@ impl<T: Externalities> Externalities for WithoutStorageRoot<T> {
     }
 
     fn storage_root(&mut self, _state_version: StateVersion) -> Vec<u8> {
-        // Mock the storage root
-        // This is an attempt to make the fuzzer faster
-        // Ideally this should be part of another Externalities impl, not this one
-        // and this should just call self.inner as usual
-
         // Mock storage root using block number
+        // This is an attempt to make the fuzzer faster
         let block_number = self
             .inner
             .storage(
