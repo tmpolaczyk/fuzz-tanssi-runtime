@@ -5,6 +5,7 @@ use parity_scale_codec::Decode;
 use scale_info::form::PortableForm;
 use scale_info::{PortableRegistry, TypeDef};
 use std::collections::HashMap;
+use sp_core::twox_128;
 
 lazy_static::lazy_static! {
     pub static ref METADATA: RuntimeMetadataV15 = {
@@ -155,6 +156,8 @@ pub fn unhash_storage_key(key: &[u8]) -> String {
         format!("{} {}", pallet_name, storage_name)
     } else if let Some(pallet_name) = pallet_name_from_key(key) {
         format!("{} {}", pallet_name, "<unknown>")
+    } else if let Some(decoded_storage_param) = decode_twox128_storage_param(key) {
+        format!("twox128({:?})", decoded_storage_param)
     } else if let Some(ascii_str) = ascii_str_if_printable(key) {
         // debug-escape so it is clear that this is a raw key (it will start with ")
         format!("{:?}", ascii_str)
@@ -162,6 +165,35 @@ pub fn unhash_storage_key(key: &[u8]) -> String {
         format!("{:?}...", ascii_str)
     } else {
         format!("<unknown>")
+    }
+}
+
+/// When declaring a param as pub storage Foo, it is stored at twox128(":Foo:")
+/// We can detect that case if the key length is exactly 16 bytes
+/// But we cannot unhash the key using metadata, we can only do it because we hardcode the keys
+/// manually here:
+fn decode_twox128_storage_param(key: &[u8]) -> Option<&'static str> {
+    lazy_static::lazy_static! {
+        static ref KNOWN_TWOX128_KEYS: HashMap<[u8; 16], &'static str> = {
+            let map = HashMap::from_iter([
+                (<[u8; 16]>::try_from(hex::decode("aed97c7854d601808b98ae43079dafb3").unwrap()).unwrap(), ":EthereumGatewayAddress:"),
+                (<[u8; 16]>::try_from(hex::decode("6c0371aaced112cb139962c46fee0c22").unwrap()).unwrap(), ":UseSnowbridgeV2:"),
+                (<[u8; 16]>::try_from(hex::decode("1e8445dc201eeb8560e5579a5dd54655").unwrap()).unwrap(), ":RequiredStakeForStakeAndSlash:"),
+            ]);
+
+            for (k, v) in map.iter() {
+                let new_k = twox_128(v.as_bytes());
+                assert_eq!(&new_k, k, "wrong twox128 hash for value {:?}", v);
+            }
+
+            map
+        };
+    }
+
+    if let Ok(key) = <&[u8; 16]>::try_from(key) {
+        KNOWN_TWOX128_KEYS.get(key).copied()
+    } else {
+        None
     }
 }
 

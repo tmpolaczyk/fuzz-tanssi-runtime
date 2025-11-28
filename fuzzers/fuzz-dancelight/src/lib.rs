@@ -288,7 +288,7 @@ fn genesis_storage_from_snapshot() -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCa
 // "local" network.
 fn genesis_storage_from_zombienet() -> (MemoryDB<BlakeTwo256>, H256, SharedTrieCache<BlakeTwo256>) {
     const ZOMBIENET_STATE_CHAIN_SPEC_JSON: &[u8] = include_bytes!(
-        "../../../snapshots/zombienet-dancelight-a1f0612013506d77c22e2afb87a56b447e603572-before-oninitialize.json"
+        "../../../snapshots/zombienet-dancelight-6450402afa2ef4a7f23f4dda208eb46544c72f85-before-oninitialize.json"
     );
 
     read_snapshot::read_snapshot(ZOMBIENET_STATE_CHAIN_SPEC_JSON)

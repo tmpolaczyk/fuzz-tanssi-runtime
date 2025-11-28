@@ -4,6 +4,7 @@ pub use crate::storage_tracer::tracing_externalities::TracingExt;
 use many_to_many::ManyToMany;
 use std::collections::{HashMap, HashSet};
 use std::{cmp::max, sync::Arc};
+use itertools::Itertools;
 
 pub type CallIndex = (u8, u8);
 pub type StorageKey = Arc<[u8]>;
@@ -786,7 +787,7 @@ impl StorageTracer {
                     *bw = max(*bw, old_value.len() as u32 + to_append.len() as u32);
 
                     // In any case, let's keep track of which keys use storage::append
-                    self.appended_keys.insert(key.clone());
+                    self.appended_keys.insert(trim_32(key).to_vec());
                 }
                 ReadOrWrite::KillPrefix(key) => {
                     *self.top_writes.entry(key.clone()).or_insert(0) += 1;
@@ -865,162 +866,13 @@ impl StorageTracer {
         println!(
             "Keys that use storage::append feature (stats may be off for these because we convert them into read + write)"
         );
-        for key in self.appended_keys.iter() {
-            println!("{:<74} {}", unhash_storage_key(&key), hex::encode(key));
-        }
-    }
 
-    /// Like `print_histograms`, but shows per-context RW flags for each key
-    /// in a fixed order: [OnInitialize, Inherents, ExtrinsicSigned, ExtrinsicRoot, OnFinalize].
-    pub fn print_histograms_by_context(&self) {
-        fn tokens_line(
-            key: &[u8],
-            rb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
-            wb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
-        ) -> String {
-            BlockContext::iter()
-                .map(|ctx| {
-                    let r = rb.get(&ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
-                    let w = wb.get(&ctx).and_then(|m| m.get(key)).copied().unwrap_or(0);
-                    let rch = if r > 0 { 'R' } else { '-' };
-                    let wch = if w > 0 { 'W' } else { '-' };
-                    format!("{}{}", rch, wch)
-                })
-                .collect::<Vec<_>>()
-                .join(" ")
-        }
+        let appended_keys_fmt: Vec<_> = self.appended_keys.iter().map(|key| {
+            format!("{:<74} 0x{}", unhash_storage_key(&key), hex::encode(key))
+        }).sorted().collect();
 
-        fn print_top_with_context(
-            flat: &HashMap<Vec<u8>, u32>,
-            rb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
-            wb: &HashMap<BlockContext, HashMap<Vec<u8>, u32>>,
-            heading: &str,
-            top_k: usize,
-        ) {
-            let mut items: Vec<(&[u8], u32)> =
-                flat.iter().map(|(k, &v)| (k.as_slice(), v)).collect();
-
-            if items.is_empty() {
-                println!("<empty>");
-                return;
-            }
-
-            let k = top_k.min(items.len());
-            let nth_index = items.len() - k;
-            items.select_nth_unstable_by(nth_index, |a, b| {
-                a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0))
-            });
-            let topk = &mut items[nth_index..];
-            topk.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-
-            println!("{heading}");
-            println!("Legend for context [Init Inh Root Sig Fin Try]: R=read, W=write, -=none");
-            for (key, count) in topk.iter() {
-                let tokens = tokens_line(key, rb, wb);
-                // 17 = 6 tokens * 2 chars + 5 spaces between them
-                println!("{:<17} {:>8}  {}", tokens, count, unhash_storage_key(key));
-                println!("{:>17}      {}", "", hex::encode(key));
-            }
-        }
-        fn print_top(map: &HashMap<Vec<u8>, u32>, heading: &str, top_k: usize) {
-            let mut items: Vec<(&[u8], u32)> =
-                map.iter().map(|(k, &v)| (k.as_slice(), v)).collect();
-
-            if items.is_empty() {
-                println!("<empty>");
-                return;
-            }
-            let k = top_k.min(items.len());
-
-            // Partition so the largest k elements (by count, then key) are in the last k slots.
-            let nth_index = items.len() - k;
-            items.select_nth_unstable_by(nth_index, |a, b| {
-                // Ascending for the partition step (so biggest end up to the right)
-                a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0))
-            });
-            // Sort only the top-k slice for deterministic, pretty output (count desc, key asc).
-            let topk = &mut items[nth_index..];
-            topk.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-
-            println!("{heading}");
-            for (key, count) in topk.iter() {
-                println!("{:>8}  {}", count, unhash_storage_key(key));
-                println!("          {}", hex::encode(key));
-            }
-        }
-
-        print_top_with_context(
-            &self.top_reads,
-            &self.top_reads_by_ctx,
-            &self.top_writes_by_ctx,
-            "Top most frequent reads (with per-context RW presence)",
-            6,
-        );
-        println!();
-        print_top_with_context(
-            &self.top_writes,
-            &self.top_reads_by_ctx,
-            &self.top_writes_by_ctx,
-            "Top most frequent writes (with per-context RW presence)",
-            6,
-        );
-        println!();
-        print_top(&self.biggest_reads, "Top biggest storage reads in bytes", 6);
-        print_top(
-            &self.biggest_writes,
-            "Top biggest storage writes in bytes",
-            6,
-        );
-        println!();
-        println!(
-            "Keys that use storage::append feature (stats may be off for these because we convert them into read + write)"
-        );
-        for key in self.appended_keys.iter() {
-            println!("{:<74} {}", unhash_storage_key(&key), hex::encode(key));
-        }
-    }
-
-    pub fn print_all_keys_alphabetical(&self) {
-        let mut h = HashMap::new();
-
-        h.extend(self.top_reads.keys().map(|k| (k, "R ")));
-        for k in self.top_writes.keys() {
-            let old = h.insert(k, " W");
-            if old.is_some() {
-                h.insert(k, "RW");
-            }
-        }
-
-        let mut v: Vec<((String, String), &'static str)> = h
-            .into_iter()
-            .map(|(k, v)| {
-                let mut pretty_key = unhash_storage_key(k);
-
-                ((pretty_key, format!("0x{}", hex::encode(trim_32(k)))), v)
-            })
-            .collect();
-
-        v.sort();
-
-        fn merge_vals<'a>(a: &'a str, b: &'a str) -> &'a str {
-            // Possible values: "R ", " W", "RW"
-            // If the values are equal return one of them, done.
-            // If the values are different, then at least one of them is R and at least one of them
-            // is W, so the merged is RW
-            if a == b { a } else { "RW" }
-        }
-
-        v.dedup_by(|b, a| {
-            if a.0 == b.0 {
-                a.1 = merge_vals(a.1, b.1); // mutate the first value
-                true // drop `b`
-            } else {
-                false
-            }
-        });
-
-        for ((k1, k2), v) in v {
-            println!("{} {:48} {}", v, k1, k2);
+        for x in appended_keys_fmt {
+            println!("{}", x);
         }
     }
 
