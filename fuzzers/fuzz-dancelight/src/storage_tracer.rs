@@ -1,10 +1,10 @@
 use crate::metadata::unhash_storage_key;
 use crate::storage_tracer::tracing_externalities::ReadOrWrite;
 pub use crate::storage_tracer::tracing_externalities::TracingExt;
+use itertools::Itertools;
 use many_to_many::ManyToMany;
 use std::collections::{HashMap, HashSet};
 use std::{cmp::max, sync::Arc};
-use itertools::Itertools;
 
 pub type CallIndex = (u8, u8);
 pub type StorageKey = Arc<[u8]>;
@@ -847,8 +847,12 @@ impl StorageTracer {
 
             println!("{heading}");
             for (key, count) in topk.iter() {
-                println!("{:>8}  {}", count, unhash_storage_key(key));
-                println!("          {}", hex::encode(key));
+                println!(
+                    "{:>17} {:56} 0x{}",
+                    count,
+                    unhash_storage_key(key),
+                    hex::encode(key),
+                );
             }
         }
 
@@ -864,12 +868,22 @@ impl StorageTracer {
         );
         println!();
         println!(
-            "Keys that use storage::append feature (stats may be off for these because we convert them into read + write)"
+            "Keys that use storage::append feature (stats may be off for these because we treat them as read + write)"
         );
 
-        let appended_keys_fmt: Vec<_> = self.appended_keys.iter().map(|key| {
-            format!("{:<74} 0x{}", unhash_storage_key(&key), hex::encode(key))
-        }).sorted().collect();
+        let appended_keys_fmt: Vec<_> = self
+            .appended_keys
+            .iter()
+            .map(|key| {
+                format!(
+                    "{:>17} {:56} 0x{}",
+                    "",
+                    unhash_storage_key(&key),
+                    hex::encode(key)
+                )
+            })
+            .sorted()
+            .collect();
 
         for x in appended_keys_fmt {
             println!("{}", x);
@@ -957,7 +971,7 @@ impl StorageTracer {
         });
 
         println!(
-            r#"\
+            r#"
 List of seen storage keys, in alphabetical order.
 All keys trimmed to the first 32 bytes, so we see 1 entry per storage map.
 Indicates during which phase of block execution the key was seen:
