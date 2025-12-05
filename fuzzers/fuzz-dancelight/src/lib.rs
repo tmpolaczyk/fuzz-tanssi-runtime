@@ -15,7 +15,7 @@ use crate::metadata::{
 use crate::simple_backend::SimpleBackend;
 use crate::storage_tracer::{BlockContext, ExtStorageTracer, TracingExt};
 use crate::without_storage_root::WithoutStorageRoot;
-use dancelight_runtime::{AuthorNoting, Session, System, TanssiCollatorAssignment};
+use dancelight_runtime::{AuthorNoting, Session, System, TanssiCollatorAssignment, UseSnowbridgeV2};
 use frame_support::dispatch::DispatchResultWithPostInfo;
 use frame_support::traits::CallerTrait;
 use itertools::{EitherOrBoth, Itertools};
@@ -1126,6 +1126,8 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
         let num_events_before = *NUM_EVENTS_BEFORE;
         let mut num_events_before_inner = *NUM_EVENTS_BEFORE;
 
+        UseSnowbridgeV2::set(&true);
+
         // Origin is kind of like a state machine
         // By default we try using Alice, and if we get Err::BadOrigin, we check if root_can_call
         // that extrinsic, and if so retry as root
@@ -1275,6 +1277,8 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
     sp_externalities::set_and_run_with_externalities(&mut ext, || {
         ExtStorageTracer::set_block_context(BlockContext::TryState);
         let initial_total_issuance = TotalIssuance::<Runtime>::get();
+
+        UseSnowbridgeV2::set(&true);
 
         let first_era = ExternalValidators::current_era().unwrap();
 
