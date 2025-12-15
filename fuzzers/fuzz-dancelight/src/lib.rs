@@ -15,7 +15,7 @@ use crate::metadata::{
 use crate::simple_backend::SimpleBackend;
 use crate::storage_tracer::{BlockContext, ExtStorageTracer, TracingExt};
 use crate::without_storage_root::WithoutStorageRoot;
-use dancelight_runtime::{AuthorNoting, Session, System, TanssiCollatorAssignment, UseSnowbridgeV2};
+use dancelight_runtime::{AuthorNoting, EthereumInboundQueueV2, Session, System, TanssiCollatorAssignment, TimestampProvider, UseSnowbridgeV2};
 use frame_support::dispatch::DispatchResultWithPostInfo;
 use frame_support::traits::CallerTrait;
 use itertools::{EitherOrBoth, Itertools};
@@ -26,6 +26,8 @@ use sp_consensus_aura::AURA_ENGINE_ID;
 use sp_externalities::Externalities;
 use sp_state_machine::OverlayedChanges;
 use std::sync::Mutex;
+use dancelight_runtime::bridge_to_ethereum_config::EthereumGatewayAddress;
+use frame_support::storage::{with_storage_layer, with_transaction};
 use test_relay_sproof_builder::{HeaderAs, ParaHeaderSproofBuilder, ParaHeaderSproofBuilderItem};
 use tp_traits::ForSession;
 use {
@@ -352,6 +354,11 @@ pub enum FuzzRuntimeCall {
     NewBlock,
     // Fast forward to next session
     NewSession,
+    InboundQueueV2Recv {
+        relayer: u8,
+        //topics: Vec<H256>,
+        data: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Encode, Decode, TypeInfo, Clone, PartialEq, Eq)]
@@ -1084,6 +1091,145 @@ pub fn format_dispatch_result(res: &DispatchResultWithPostInfo) -> String {
     }
 }
 
+#[derive(Arbitrary, Debug)]
+pub struct DataFuzzInboundV2 {
+    origin: u8,
+    data: Vec<u8>,
+    nonce: u8,
+    value: u64,
+    fee1: u64,
+    fee2: u64,
+    assets: Vec<AssetKindData>,
+}
+
+#[derive(Arbitrary, Debug)]
+pub struct AssetKindData {
+    kind: u8,
+    data: Vec<u8>,
+}
+
+#[derive(Arbitrary, Debug)]
+pub enum TopicsMode {
+    Hardcoded,
+    Zero,
+    Empty,
+    Raw([u8; 32]),
+}
+
+fn build_topics(x: &[TopicsMode]) -> Vec<H256> {
+    // Event signature according to rust docs
+    // OutboundMessageAccepted
+    // TODO: this doesn't match the polkadot-sdk docs, they say the signature is
+    // 0x550e2067494b1736ea5573f2d19cdc0ac95b410fff161bf16f11c6229655ec9c
+    // Signature for event OutboundMessageAccepted(bytes32 indexed channel_id, uint64 nonce, bytes32 indexed message_id, bytes payload);
+    let event_topic = hex::decode("7153f9357c8ea496bba60bf82e67143e27b64462b49041f8e689e1b05728f84f").unwrap();
+    let event_topic: [u8; 32] = event_topic.try_into().unwrap();
+    let event_topic: H256 = event_topic.into();
+    // There are no channels in snowbridge v2?
+    let topic_channel_id = H256::default();
+    let topic_message_id = H256::default();
+    let topics = vec![
+        event_topic, // event signature
+        topic_channel_id, // channel id
+        topic_message_id, // message id
+    ];
+
+    let mut topics: Vec<H256> = topics.into_iter().zip(x.into_iter()).filter_map(|(topic, mode)| {
+        match mode {
+            TopicsMode::Hardcoded => Some(topic),
+            TopicsMode::Zero => Some(Default::default()),
+            TopicsMode::Empty => None,
+            TopicsMode::Raw(x) => Some(x.into()),
+        }
+    }).collect();
+
+    // First 3 TopicsMode handled above, rest here
+    for mode3 in x.iter().skip(3) {
+        let topic3 = match mode3 {
+            TopicsMode::Zero => Some(H256::default()),
+            TopicsMode::Raw(x) => Some(x.into()),
+            _ => None,
+        };
+        if let Some(topic) = topic3 {
+            topics.push(topic);
+        }
+    }
+
+    topics
+}
+
+use snowbridge_inbound_queue_primitives::v2::IGatewayV2;
+use alloy_core::sol_types::SolEvent;
+use alloy_core::primitives::Address;
+
+pub fn fuzz_inbound_v2<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: DataFuzzInboundV2) {
+    let DataFuzzInboundV2 {
+        origin,
+        data,
+        nonce,
+        value,
+        fee1,
+        fee2,
+        assets,
+    } = data;
+    let relayer = origin;
+    let mut ext_parts = FC::externalities_parts();
+    let mut ext = FC::ext_new(&mut ext_parts);
+
+    sp_externalities::set_and_run_with_externalities(&mut ext, || {
+        UseSnowbridgeV2::set(&true);
+
+        let event = IGatewayV2::OutboundMessageAccepted {
+            nonce: nonce.into(),
+            payload: IGatewayV2::Payload {
+                origin: Address::from_slice(EthereumGatewayAddress::get().as_bytes()),
+                assets: assets.into_iter().map(|x| IGatewayV2::EthereumAsset {
+                    kind: x.kind,
+                    data: x.data.into(),
+                }).collect(),
+                // TODO: xcm kind always 0?
+                xcm: IGatewayV2::Xcm { kind: 0, data: data.into() },
+                claimer: vec![].into(),
+                value: value.into(),
+                executionFee: fee1.into(),
+                relayerFee: fee2.into(),
+            },
+        };
+
+        let log = snowbridge_verification_primitives::Log {
+            address: EthereumGatewayAddress::get(),
+            topics: event
+                .encode_topics()
+                .into_iter()
+                .map(|word| H256::from(word.0.0))
+                .collect(),
+            data: event.encode_data(),
+        };
+        match (&log).try_into() {
+            Ok(msg) => {
+                ExtStorageTracer::set_block_context(BlockContext::ExtrinsicSigned);
+                let relayer = get_origin(relayer as usize);
+                let res = with_storage_layer(|| {
+                    EthereumInboundQueueV2::process_message(relayer.clone(), msg)
+                });
+                match res {
+                    Ok(()) => {
+                        //log::info!("Got successful EthereumInboundQueueV2 message!");
+                    }
+                    Err(e) => {
+                        //log::info!("process_message error: {:?}", e);
+                    }
+                }
+            },
+            // Ignore parse errors
+            Err(e) => {
+                // this error is a unit struct with no context, so not worth logging
+                //log::info!("parse error: {:?}", e);
+            },
+        }
+    })
+}
+
 /// Start fuzzing a snapshot of a live network.
 /// This doesn't run `on_initialize` and `on_finalize`, everything is executed inside the same block.
 /// Inherents are also not tested, the snapshot is created after the inherents.
@@ -1220,6 +1366,46 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
                         FuzzRuntimeCall::NewSession => {
                             // Unimplemented
                             continue;
+                        }
+                        FuzzRuntimeCall::InboundQueueV2Recv { relayer, data } => {
+                            // Event signature according to rust docs
+                            // OutboundMessageAccepted
+                            // TODO: this doesn't match the polkadot-sdk docs, they say the signature is
+                            // 0x550e2067494b1736ea5573f2d19cdc0ac95b410fff161bf16f11c6229655ec9c
+                            // Signature for event OutboundMessageAccepted(bytes32 indexed channel_id, uint64 nonce, bytes32 indexed message_id, bytes payload);
+                            let event_topic = hex::decode("7153f9357c8ea496bba60bf82e67143e27b64462b49041f8e689e1b05728f84f").unwrap();
+                            let event_topic: [u8; 32] = event_topic.try_into().unwrap();
+                            let event_topic: H256 = event_topic.into();
+                            // There are no channels in snowbridge v2?
+                            let topic_channel_id = H256::default();
+                            let topic_message_id = H256::default();
+                            let topics = vec![
+                                event_topic, // event signature
+                                topic_channel_id, // channel id
+                                topic_message_id, // message id
+                            ];
+                            if topics.len() > 4 {
+                                continue;
+                            }
+                            let log = snowbridge_verification_primitives::Log {
+                                address: EthereumGatewayAddress::get(),
+                                topics,
+                                data,
+                            };
+                            match (&log).try_into() {
+                                Ok(msg) => {
+                                    ExtStorageTracer::set_block_context(BlockContext::ExtrinsicSigned);
+                                    let relayer = get_origin(relayer as usize);
+                                    let res = with_storage_layer(|| {
+                                        EthereumInboundQueueV2::process_message(relayer.clone(), msg)
+                                    });
+                                    if res.is_ok() {
+                                        log::info!("Got successful EthereumInboundQueueV2 message!");
+                                    }
+                                },
+                                // Ignore parse errors
+                                Err(_) => continue,
+                            }
                         }
                     }
                 }
@@ -1441,6 +1627,10 @@ pub fn fuzz_zombie<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
                             // This assert is to ensure that the +10 above is correct.
                             // If session length changes this will panic, so increase the +10.
                             assert_eq!(count, 1, "NewSession: created {} blocks", count);
+                            continue;
+                        }
+                        FuzzRuntimeCall::InboundQueueV2Recv { .. } => {
+                            // TODO: unimplemented
                             continue;
                         }
                     }

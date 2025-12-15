@@ -4,7 +4,7 @@
 
 use fuzz_dancelight::*;
 
-libfuzzer_sys::fuzz_target!(init: fuzz_init_only_logger(), |data: &[u8]| fuzz_decode_calls(data));
+libfuzzer_sys::fuzz_target!(init: fuzz_init::<FuzzLiveOneblock>(), |data: DataFuzzInboundV2| fuzz_inbound_v2::<FuzzLiveOneblock>(data));
 
 /*
 libfuzzer_sys::fuzz_crossover!(|data1: &[u8], data2: &[u8], out: &mut [u8], seed: u32| {

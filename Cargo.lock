@@ -3834,6 +3834,7 @@ dependencies = [
 name = "fuzz-dancelight"
 version = "0.1.0"
 dependencies = [
+ "alloy-core",
  "bitvec",
  "cumulus-primitives-core",
  "dancelight-runtime",
@@ -3862,6 +3863,8 @@ dependencies = [
  "scale-value",
  "serde",
  "serde_json",
+ "snowbridge-inbound-queue-primitives",
+ "snowbridge-verification-primitives",
  "sp-consensus-aura",
  "sp-consensus-babe",
  "sp-core",

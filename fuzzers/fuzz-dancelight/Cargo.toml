@@ -34,6 +34,7 @@ scale-info = { workspace = true }
 scale-value = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+snowbridge-verification-primitives = { workspace = true }
 sp-consensus-aura = { workspace = true }
 sp-consensus-babe = { workspace = true }
 sp-core = { workspace = true }
@@ -47,6 +48,8 @@ sp-trie = { workspace = true }
 trie-db = { workspace = true }
 test-relay-sproof-builder = { workspace = true, features = ["std"] }
 tp-traits = { workspace = true }
+snowbridge-inbound-queue-primitives = { workspace = true }
+alloy-core = { workspace = true }
 
 # fix missing feature error
 tokio = { workspace = true, features = ["net"]}
