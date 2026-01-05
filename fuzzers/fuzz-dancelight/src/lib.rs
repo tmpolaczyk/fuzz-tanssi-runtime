@@ -1100,6 +1100,7 @@ pub struct DataFuzzInboundV2 {
     fee1: u64,
     fee2: u64,
     assets: Vec<AssetKindData>,
+    claimer: Vec<u8>,
 }
 
 #[derive(Arbitrary, Debug)]
@@ -1171,6 +1172,7 @@ pub fn fuzz_inbound_v2<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: Data
         fee1,
         fee2,
         assets,
+        claimer,
     } = data;
     let relayer = origin;
     let mut ext_parts = FC::externalities_parts();
@@ -1182,14 +1184,18 @@ pub fn fuzz_inbound_v2<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: Data
         let event = IGatewayV2::OutboundMessageAccepted {
             nonce: nonce.into(),
             payload: IGatewayV2::Payload {
-                origin: Address::from_slice(EthereumGatewayAddress::get().as_bytes()),
+                // origin: gateway for register token, msg.sender for arbitrary xcm
+                //origin: Address::from_slice(EthereumGatewayAddress::get().as_bytes()),
+                origin: Address::from_slice(&[0x11; 20]),
                 assets: assets.into_iter().map(|x| IGatewayV2::EthereumAsset {
                     kind: x.kind,
                     data: x.data.into(),
                 }).collect(),
                 // TODO: xcm kind always 0?
+                // yes, kind: 1 is createAsset, that needs gateway origin
+                // https://github.com/Snowfork/snowbridge/blob/a37ca77cf369ac84ecf07d8f5f31a9d497216f6d/contracts/src/v2/Types.sol#L82
                 xcm: IGatewayV2::Xcm { kind: 0, data: data.into() },
-                claimer: vec![].into(),
+                claimer: claimer.into(),
                 value: value.into(),
                 executionFee: fee1.into(),
                 relayerFee: fee2.into(),

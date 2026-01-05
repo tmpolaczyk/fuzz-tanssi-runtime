@@ -3,14 +3,15 @@ use clap::{Parser, Subcommand};
 use fuzz_dancelight::{
     EVENT_TRACER, EXTR_TRACER, ExtrOrPseudo, FuzzLiveOneblock, FuzzRuntimeCall, FuzzZombie,
     STORAGE_TRACER, StorageTracer, TraceEvents, TraceStorage, example_runtime_call,
-    extrinsics_iter, fuzz_decode_calls, fuzz_init, fuzz_init_only_logger, fuzz_live_oneblock,
-    fuzz_zombie,
+    extrinsics_iter, fuzz_decode_calls, fuzz_init, fuzz_init_only_logger, fuzz_live_oneblock, fuzz_inbound_v2,
+    fuzz_zombie, FuzzerConfig
 };
 use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
 use scale_info::TypeInfo;
 use scale_info::scale::Encode;
 use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
+use arbitrary::{Arbitrary, Unstructured};
 
 mod coverage;
 
@@ -82,10 +83,15 @@ enum Commands {
     },
 }
 
+fn fuzz_inbound_v2_wrapper<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &[u8]) {
+    fuzz_inbound_v2::<FC>(Arbitrary::arbitrary(&mut Unstructured::new(data)).unwrap())
+}
+
 fn init_and_get_fuzz_main(fuzz_target: &str) -> fn(&[u8]) {
     match fuzz_target {
         "fuzz_decode_calls" => fuzz_init_only_logger(),
         "fuzz_live_oneblock" => fuzz_init::<FuzzLiveOneblock>(),
+        "fuzz_inbound_v2" => fuzz_init::<FuzzLiveOneblock>(),
         "fuzz_zombie" => fuzz_init::<FuzzZombie>(),
         _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
     };
@@ -93,6 +99,7 @@ fn init_and_get_fuzz_main(fuzz_target: &str) -> fn(&[u8]) {
     let fuzz_main = match fuzz_target {
         "fuzz_decode_calls" => fuzz_decode_calls,
         "fuzz_live_oneblock" => fuzz_live_oneblock::<FuzzLiveOneblock>,
+        "fuzz_inbound_v2" => fuzz_inbound_v2_wrapper::<FuzzLiveOneblock>,
         "fuzz_zombie" => fuzz_zombie::<FuzzZombie>,
         _ => unimplemented!("unknown fuzz target {:?}", fuzz_target),
     };
