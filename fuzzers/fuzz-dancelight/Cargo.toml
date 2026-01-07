@@ -6,13 +6,14 @@ license = "GPL-3.0-only"
 version = "0.1.0"
 
 [dependencies]
-externalities-without-storage-root = { workspace = true }
+alloy-core = { workspace = true }
 bitvec = { workspace = true }
 cumulus-primitives-core = { workspace = true }
 dancelight-runtime = { workspace = true, features = [ "fast-runtime", "std", "try-runtime" ] }
 dancelight-runtime-constants = { workspace = true, features = [ "std" ] }
 dp-container-chain-genesis-data = { workspace = true, features = [ "json", "std" ] }
 dp-core = { workspace = true, features = [ "std" ] }
+externalities-without-storage-root = { workspace = true }
 frame-metadata = { workspace = true }
 frame-support = { workspace = true }
 frame-system = { workspace = true }
@@ -23,8 +24,8 @@ libfuzzer-sys = { workspace = true, features = [ "arbitrary-derive" ] }
 log = { workspace = true }
 nimbus-primitives = { workspace = true }
 pallet-balances = { workspace = true }
-pallet-timestamp = { workspace = true }
 pallet-configuration = { workspace = true }
+pallet-timestamp = { workspace = true }
 parity-scale-codec = { workspace = true, features = [ "derive", "max-encoded-len" ] }
 polkadot-core-primitives = { workspace = true }
 primitives = { workspace = true }
@@ -35,6 +36,7 @@ scale-info = { workspace = true }
 scale-value = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+snowbridge-inbound-queue-primitives = { workspace = true }
 snowbridge-verification-primitives = { workspace = true }
 sp-consensus-aura = { workspace = true }
 sp-consensus-babe = { workspace = true }
@@ -46,14 +48,12 @@ sp-runtime = { workspace = true }
 sp-state-machine = { workspace = true }
 sp-storage = { workspace = true }
 sp-trie = { workspace = true }
-trie-db = { workspace = true }
-test-relay-sproof-builder = { workspace = true, features = ["std"] }
+test-relay-sproof-builder = { workspace = true, features = [ "std" ] }
 tp-traits = { workspace = true }
-snowbridge-inbound-queue-primitives = { workspace = true }
-alloy-core = { workspace = true }
+trie-db = { workspace = true }
 
 # fix missing feature error
-tokio = { workspace = true, features = ["net"]}
+tokio = { workspace = true, features = [ "net" ] }
 
 [lints]
 workspace = true

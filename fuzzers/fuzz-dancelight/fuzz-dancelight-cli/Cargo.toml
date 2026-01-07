@@ -6,16 +6,16 @@ license = "GPL-3.0-only"
 version = "0.1.0"
 
 [dependencies]
+anyhow = { workspace = true }
+arbitrary = { workspace = true, features = [ "derive" ] }
+clap = { workspace = true, features = [ "derive" ] }
 fuzz-dancelight = { workspace = true }
-clap = {workspace = true, features = ["derive"]}
-anyhow = {workspace = true}
-serde_json = {workspace = true }
-scale-info = {workspace = true}
-notify = {workspace = true}
-indicatif = {workspace = true, features = [ "rayon" ] }
-rayon = {workspace = true}
-lazy_static = {workspace = true}
-arbitrary = {workspace = true, features = ["derive"]}
+indicatif = { workspace = true, features = [ "rayon" ] }
+lazy_static = { workspace = true }
+notify = { workspace = true }
+rayon = { workspace = true }
+scale-info = { workspace = true }
+serde_json = { workspace = true }
 
 
 [lints]
