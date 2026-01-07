@@ -3839,6 +3839,7 @@ dependencies = [
  "scale-value",
  "serde",
  "serde_json",
+ "simple-backend-read-only",
  "snowbridge-inbound-queue-primitives",
  "snowbridge-verification-primitives",
  "sp-consensus-aura",
@@ -11115,6 +11116,17 @@ dependencies = [
  "num-traits",
  "paste",
  "wide",
+]
+
+[[package]]
+name = "simple-backend-read-only"
+version = "0.1.0"
+dependencies = [
+ "hex-literal",
+ "sp-core",
+ "sp-state-machine",
+ "sp-storage",
+ "trie-db",
 ]
 
 [[package]]

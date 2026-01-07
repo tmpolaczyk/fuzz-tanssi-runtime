@@ -7,6 +7,7 @@ use sp_storage::{ChildInfo, StateVersion, Storage};
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use trie_db::{DBValue, MerkleValue};
 
+/// Read-only [sp_state_machine::Backend].
 pub struct SimpleBackend {
     base: &'static Storage,
 }

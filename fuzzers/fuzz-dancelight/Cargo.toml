@@ -6,6 +6,7 @@ license = "GPL-3.0-only"
 version = "0.1.0"
 
 [dependencies]
+simple-backend-read-only = { workspace = true }
 alloy-core = { workspace = true }
 bitvec = { workspace = true }
 cumulus-primitives-core = { workspace = true }

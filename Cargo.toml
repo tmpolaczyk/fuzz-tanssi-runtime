@@ -23,6 +23,7 @@ dancelight-runtime = { git = "https://github.com/moondance-labs/tanssi", branch 
 dancelight-runtime-constants = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
 externalities-without-storage-root = { path = "crates/externalities-without-storage-root" }
 fuzz-dancelight = { path = "fuzzers/fuzz-dancelight" }
+simple-backend-read-only = { path = "crates/simple-backend-read-only" }
 pallet-configuration = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
 starlight-runtime = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
 starlight-runtime-constants = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }

@@ -12,7 +12,7 @@ use crate::genesis::invulnerables_from_seeds;
 use crate::metadata::{
     ACCOUNT_ID_TYPE_ID, METADATA, RUNTIME_CALL_TYPE_ID, call_name_from_idx, event_name_from_idx,
 };
-use crate::simple_backend::SimpleBackend;
+use simple_backend_read_only::SimpleBackend;
 use crate::storage_tracer::{BlockContext, ExtStorageTracer, TracingExt};
 use dancelight_runtime::bridge_to_ethereum_config::EthereumGatewayAddress;
 use dancelight_runtime::{
@@ -86,8 +86,6 @@ mod genesis;
 mod metadata;
 mod mutators;
 mod read_snapshot;
-// TODO: extract to separate crate to speed up compilation
-mod simple_backend;
 mod storage_tracer;
 
 use crate::event_tracer::EventTracer;
