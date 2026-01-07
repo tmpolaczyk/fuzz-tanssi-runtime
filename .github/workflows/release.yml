@@ -9,7 +9,7 @@ on:
 
 jobs:
     set-tags:
-        runs-on: ubuntu-22.04
+        runs-on: ubuntu-24.04
         outputs:
             image_exists: ${{ steps.check-docker-image.outputs.image_exists }}
             git_ref: ${{ steps.check-git-ref.outputs.git_ref }}
@@ -18,106 +18,77 @@ jobs:
             latest_rt: ${{ steps.get-sha.outputs.latest_rt }}
             latest_rt_sha8: ${{ steps.get-sha.outputs.latest_rt_sha8 }}
         steps:
-            - name: Check git ref
-              id: check-git-ref
-              # if PR
-              # else if manual PR
-              # else (push)
-              run: |
-                  if [[ -n "${{ github.event.pull_request.head.sha }}" ]]; then
-                    echo "git_branch=$(echo ${GITHUB_HEAD_REF})" >> $GITHUB_OUTPUT
-                    echo "git_ref=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
-                  elif [[ -n "${{ github.event.inputs.pull_request }}" ]]; then
-                    echo "git_branch=$(echo ${GITHUB_HEAD_REF})" >> $GITHUB_OUTPUT
-                    echo "git_ref=refs/pull/${{ github.event.inputs.pull_request }}/head" >> $GITHUB_OUTPUT
-                  else
-                    echo "git_branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_OUTPUT
-                    echo "git_ref=$GITHUB_REF" >> $GITHUB_OUTPUT
-                  fi
-            - name: Checkout
-              uses: actions/checkout@v3
-              with:
-                  ref: ${{ steps.check-git-ref.outputs.git_ref }}
-            - name: Get Latest RT Release
-              id: get-latest-rt
-              run: |
-                  LATEST_RUNTIME_RELEASE=$(curl -s https://api.github.com/repos/moondance-labs/tanssi/releases | jq -r '.[] | select(.name | test("runtime";"i")) | .tag_name' | head -n 1 | tr -d '[:blank:]') && [[ ! -z "${LATEST_RUNTIME_RELEASE}" ]]
-                  echo $LATEST_RUNTIME_RELEASE
-                  echo "latest_rt=$LATEST_RUNTIME_RELEASE" >> $GITHUB_OUTPUT
-            - name: Get Sha
-              id: get-sha
-              run: |
-                  echo "sha=$(git log -1 --format='%H')" >> $GITHUB_OUTPUT
-                  echo "sha8=$(git log -1 --format='%H' | cut -c1-8)" >> $GITHUB_OUTPUT
-
-                  ENDPOINT="https://api.github.com/repos/moondance-labs/tanssi/git/refs/tags/${{ steps.get-latest-rt.outputs.latest_rt }}"
-                  RESPONSE=$(curl -s -H "Accept: application/vnd.github.v3+json" $ENDPOINT)
-                  TYPE=$(echo $RESPONSE | jq -r '.object.type')
-
-                  if [[ $TYPE == "commit" ]]
-                  then
-                    LATEST_RT_SHA8=$(echo $RESPONSE | jq -r '.object.sha' | cut -c -8)
-                  elif [[ $TYPE == "tag" ]]
-                  then
-                    URL=$(echo $RESPONSE | jq -r '.object.url')
-                    TAG_RESPONSE=$(curl -s -H "Accept: application/vnd.github.v3+json" $URL)
-                    TAG_RESPONSE_CLEAN=$(echo $TAG_RESPONSE | tr -d '\000-\037')
-                    LATEST_RT_SHA8=$(echo $TAG_RESPONSE_CLEAN | jq -r '.object.sha' | cut -c -8)
-                  fi
-
-                  echo $LATEST_RT_SHA8
-                  echo "latest_rt_sha8=$LATEST_RT_SHA8" >> $GITHUB_OUTPUT
-
-            - name: Check existing docker image
-              id: check-docker-image
-              run: |
-                  TAG=sha-${{ steps.get-sha.outputs.sha8 }}
-                  echo "image_exists=$(docker image inspect moondancelabs/tanssi:$TAG > /dev/null && echo "true" || echo "false")" >> $GITHUB_OUTPUT
-
-            - name: Display variables
-              run: |
-                  echo git_ref: ${{ steps.check-git-ref.outputs.git_ref }}
-                  echo sha: ${{ steps.get-sha.outputs.sha }}
-                  echo sha8: ${{ steps.get-sha.outputs.sha8 }}
-                  echo image_exists: ${{ steps.check-docker-image.outputs.image_exists }}
-                  echo latest_rt: ${{ steps.get-latest-rt.outputs.latest_rt }}
-                  echo latest_rt_sha8: ${{ steps.get-sha.outputs.latest_rt_sha8 }}
+          - name: Check git ref
+            id: check-git-ref
+            # if PR
+            # else if manual PR
+            # else (push)
+            run: |
+              if [[ -n "${{ github.event.pull_request.head.sha }}" ]]; then
+                echo "git_branch=$(echo ${GITHUB_HEAD_REF})" >> $GITHUB_OUTPUT
+                echo "git_ref=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+              elif [[ -n "${{ github.event.inputs.pull_request }}" ]]; then
+                echo "git_branch=$(echo ${GITHUB_HEAD_REF})" >> $GITHUB_OUTPUT
+                echo "git_ref=refs/pull/${{ github.event.inputs.pull_request }}/head" >> $GITHUB_OUTPUT
+              else
+                echo "git_branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_OUTPUT
+                echo "git_ref=$GITHUB_REF" >> $GITHUB_OUTPUT
+              fi
+          - name: Checkout
+            uses: actions/checkout@v6
+            with:
+              ref: ${{ steps.check-git-ref.outputs.git_ref }}
+          - name: Get Sha
+            id: get-sha
+            run: |
+              echo "sha=$(git log -1 --format='%H')" >> $GITHUB_OUTPUT
+              echo "sha8=$(git log -1 --format='%H' | cut -c1-8)" >> $GITHUB_OUTPUT
+          - name: Check existing docker image
+            id: check-docker-image
+            run: |
+              TAG=sha-${{ steps.get-sha.outputs.sha8 }}
+              echo "image_exists=$(docker image inspect moondancelabs/tanssi:$TAG > /dev/null && echo "true" || echo "false")" >> $GITHUB_OUTPUT
+          - name: Display variables
+            run: |
+              echo git_ref: ${{ steps.check-git-ref.outputs.git_ref }}
+              echo sha: ${{ steps.get-sha.outputs.sha }}
+              echo sha8: ${{ steps.get-sha.outputs.sha8 }}
 
     ####### Static Analyses #######
     cargo-clippy:
-        runs-on: ubuntu-22.04
-        needs: ["set-tags"]
+        runs-on: ubuntu-24.04
+        needs: [ "set-tags", "build" ]
+        env:
+            RUSTC_WRAPPER: "sccache"
+            CARGO_INCREMENTAL: "0"
+            SCCACHE_CACHE_SIZE: "100GB"
+            SCCACHE_GHA_ENABLED: "true"
         steps:
             - name: Checkout
-              uses: actions/checkout@v3
+              uses: actions/checkout@v6
               with:
                   ref: ${{ needs.set-tags.outputs.git_ref }}
-
             - name: Setup Rust toolchain
               run: rustup show
-
             - name: Checkout tanssi repo
               run: |
                 cd ..
                 git clone --depth 1 https://github.com/moondance-labs/tanssi
                 cd -
-
             - name: Install protoc
               run: |
                 sudo apt-get update
                 sudo apt-get install -y protobuf-compiler
-
             - name: Clippy
               run: |
-                cd fuzz
                 SKIP_WASM_BUILD=1 env -u RUSTFLAGS cargo clippy --all-targets --locked --workspace
 
     toml-formatting:
-        runs-on: ubuntu-22.04
+        runs-on: ubuntu-24.04
         needs: ["set-tags"]
         steps:
             - name: Checkout
-              uses: actions/checkout@v3
+              uses: actions/checkout@v6
               with:
                   ref: ${{ needs.set-tags.outputs.git_ref }}
 
@@ -133,14 +104,11 @@ jobs:
     ####### Building and Testing binaries #######
 
     build:
-        runs-on: ubuntu-22.04
+        runs-on: ubuntu-24.04
         needs: ["set-tags"]
-        env:
-            TMP_TARGET: "/tmp/target"
-            CARGO_TARGET_DIR: "target"
         steps:
             - name: Checkout
-              uses: actions/checkout@v3
+              uses: actions/checkout@v6
               with:
                   ref: ${{ needs.set-tags.outputs.git_ref }}
             - name: Run sccache-cache
@@ -184,58 +152,3 @@ jobs:
               with:
                   name: binaries
                   path: binaries
-
-    docker-tanssi:
-        runs-on: ubuntu-22.04
-        needs: ["set-tags", "build"]
-        strategy:
-            matrix:
-                image: ["tanssi", "container-chain-simple-template", "container-chain-evm-template"]
-        if: ${{ (needs.set-tags.outputs.image_exists == 'false') && (github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push') }}
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v3
-              with:
-                  ref: ${{ needs.set-tags.outputs.git_ref }}
-            - uses: actions/download-artifact@v4
-              with:
-                  name: binaries
-                  path: build
-                  merge-multiple: true
-            - name: Prepare
-              id: prep
-              run: |
-                  DOCKER_IMAGE=moondancelabs/${{matrix.image}}
-                  TAGS="${DOCKER_IMAGE}:sha-${{ needs.set-tags.outputs.sha8 }}"
-                  echo "tags=${TAGS}" >> $GITHUB_OUTPUT
-                  echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
-            - name: Set up QEMU
-              uses: docker/setup-qemu-action@v2.1.0
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v2.5.0
-              with:
-                  version: latest
-                  driver-opts: |
-                      image=moby/buildkit:master
-            - name: Login to DockerHub
-              uses: docker/login-action@v2.2.0
-              with:
-                  username: ${{ secrets.DOCKERHUB_USERNAME }}
-                  password: ${{ secrets.DOCKERHUB_TOKEN }}
-            - name: Build and push
-              id: docker_build
-              uses: docker/build-push-action@v4
-              with:
-                  context: .
-                  file: ./docker/${{matrix.image}}.Dockerfile
-                  platforms: linux/amd64
-                  push: true
-                  tags: ${{ steps.prep.outputs.tags }}
-                  labels: |
-                      org.opencontainers.image.title=${{ github.event.repository.name }}
-                      org.opencontainers.image.description=${{ github.event.repository.description }}
-                      org.opencontainers.image.url=${{ github.event.repository.html_url }}
-                      org.opencontainers.image.source=${{ github.event.repository.clone_url }}
-                      org.opencontainers.image.created=${{ steps.prep.outputs.created }}
-                      org.opencontainers.image.revision=${{ github.sha }}
-                      org.opencontainers.image.licenses=${{ github.event.repository.license.spdx_id }}
