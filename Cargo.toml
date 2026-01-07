@@ -19,7 +19,7 @@ repository = "https://github.com/tmpolaczyk/fuzz-tanssi-runtime"
 [workspace.dependencies]
 externalities-without-storage-root = { path = "crates/externalities-without-storage-root" }
 fuzz-dancelight = { path = "fuzzers/fuzz-dancelight" }
-fuzz-starlight = { path = "fuzzers/fuzz-starlight" }
+#fuzz-starlight = { path = "fuzzers/fuzz-starlight" }
 
 dancelight-runtime = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
 dancelight-runtime-constants = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
