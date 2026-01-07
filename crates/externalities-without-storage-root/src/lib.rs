@@ -109,9 +109,9 @@ impl<T: Externalities> Externalities for WithoutStorageRoot<T> {
         // This is an attempt to make the fuzzer faster
         let block_number = self
             .inner
-            .storage(
-                &hex_literal::hex!("26aa394eea5630e07c48ae0c9558cef702a5c1b19ab7a04f536c519aca4983ac")
-            )
+            .storage(&hex_literal::hex!(
+                "26aa394eea5630e07c48ae0c9558cef702a5c1b19ab7a04f536c519aca4983ac"
+            ))
             .unwrap();
         assert_eq!(block_number.len(), 4);
 

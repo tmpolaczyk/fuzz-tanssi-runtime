@@ -14,9 +14,14 @@ use crate::metadata::{
 };
 use crate::simple_backend::SimpleBackend;
 use crate::storage_tracer::{BlockContext, ExtStorageTracer, TracingExt};
+use dancelight_runtime::bridge_to_ethereum_config::EthereumGatewayAddress;
+use dancelight_runtime::{
+    AuthorNoting, EthereumInboundQueueV2, Session, System, TanssiCollatorAssignment,
+    TimestampProvider, UseSnowbridgeV2,
+};
 use externalities_without_storage_root::WithoutStorageRoot;
-use dancelight_runtime::{AuthorNoting, EthereumInboundQueueV2, Session, System, TanssiCollatorAssignment, TimestampProvider, UseSnowbridgeV2};
 use frame_support::dispatch::DispatchResultWithPostInfo;
+use frame_support::storage::{with_storage_layer, with_transaction};
 use frame_support::traits::CallerTrait;
 use itertools::{EitherOrBoth, Itertools};
 use libfuzzer_sys::arbitrary;
@@ -26,8 +31,6 @@ use sp_consensus_aura::AURA_ENGINE_ID;
 use sp_externalities::Externalities;
 use sp_state_machine::OverlayedChanges;
 use std::sync::Mutex;
-use dancelight_runtime::bridge_to_ethereum_config::EthereumGatewayAddress;
-use frame_support::storage::{with_storage_layer, with_transaction};
 use test_relay_sproof_builder::{HeaderAs, ParaHeaderSproofBuilder, ParaHeaderSproofBuilderItem};
 use tp_traits::ForSession;
 use {
@@ -1122,26 +1125,29 @@ fn build_topics(x: &[TopicsMode]) -> Vec<H256> {
     // TODO: this doesn't match the polkadot-sdk docs, they say the signature is
     // 0x550e2067494b1736ea5573f2d19cdc0ac95b410fff161bf16f11c6229655ec9c
     // Signature for event OutboundMessageAccepted(bytes32 indexed channel_id, uint64 nonce, bytes32 indexed message_id, bytes payload);
-    let event_topic = hex::decode("7153f9357c8ea496bba60bf82e67143e27b64462b49041f8e689e1b05728f84f").unwrap();
+    let event_topic =
+        hex::decode("7153f9357c8ea496bba60bf82e67143e27b64462b49041f8e689e1b05728f84f").unwrap();
     let event_topic: [u8; 32] = event_topic.try_into().unwrap();
     let event_topic: H256 = event_topic.into();
     // There are no channels in snowbridge v2?
     let topic_channel_id = H256::default();
     let topic_message_id = H256::default();
     let topics = vec![
-        event_topic, // event signature
+        event_topic,      // event signature
         topic_channel_id, // channel id
         topic_message_id, // message id
     ];
 
-    let mut topics: Vec<H256> = topics.into_iter().zip(x.into_iter()).filter_map(|(topic, mode)| {
-        match mode {
+    let mut topics: Vec<H256> = topics
+        .into_iter()
+        .zip(x.into_iter())
+        .filter_map(|(topic, mode)| match mode {
             TopicsMode::Hardcoded => Some(topic),
             TopicsMode::Zero => Some(Default::default()),
             TopicsMode::Empty => None,
             TopicsMode::Raw(x) => Some(x.into()),
-        }
-    }).collect();
+        })
+        .collect();
 
     // First 3 TopicsMode handled above, rest here
     for mode3 in x.iter().skip(3) {
@@ -1158,9 +1164,9 @@ fn build_topics(x: &[TopicsMode]) -> Vec<H256> {
     topics
 }
 
-use snowbridge_inbound_queue_primitives::v2::IGatewayV2;
-use alloy_core::sol_types::SolEvent;
 use alloy_core::primitives::Address;
+use alloy_core::sol_types::SolEvent;
+use snowbridge_inbound_queue_primitives::v2::IGatewayV2;
 
 pub fn fuzz_inbound_v2<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: DataFuzzInboundV2) {
     let DataFuzzInboundV2 {
@@ -1186,14 +1192,20 @@ pub fn fuzz_inbound_v2<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: Data
                 // origin: gateway for register token, msg.sender for arbitrary xcm
                 //origin: Address::from_slice(EthereumGatewayAddress::get().as_bytes()),
                 origin: Address::from_slice(&[0x11; 20]),
-                assets: assets.into_iter().map(|x| IGatewayV2::EthereumAsset {
-                    kind: x.kind,
-                    data: x.data.into(),
-                }).collect(),
+                assets: assets
+                    .into_iter()
+                    .map(|x| IGatewayV2::EthereumAsset {
+                        kind: x.kind,
+                        data: x.data.into(),
+                    })
+                    .collect(),
                 // TODO: xcm kind always 0?
                 // yes, kind: 1 is createAsset, that needs gateway origin
                 // https://github.com/Snowfork/snowbridge/blob/a37ca77cf369ac84ecf07d8f5f31a9d497216f6d/contracts/src/v2/Types.sol#L82
-                xcm: IGatewayV2::Xcm { kind: 0, data: data.into() },
+                xcm: IGatewayV2::Xcm {
+                    kind: 0,
+                    data: data.into(),
+                },
                 claimer: claimer.into(),
                 value: value.into(),
                 executionFee: fee1.into(),
@@ -1225,12 +1237,12 @@ pub fn fuzz_inbound_v2<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: Data
                         //log::info!("process_message error: {:?}", e);
                     }
                 }
-            },
+            }
             // Ignore parse errors
             Err(e) => {
                 // this error is a unit struct with no context, so not worth logging
                 //log::info!("parse error: {:?}", e);
-            },
+            }
         }
     })
 }
@@ -1378,14 +1390,17 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
                             // TODO: this doesn't match the polkadot-sdk docs, they say the signature is
                             // 0x550e2067494b1736ea5573f2d19cdc0ac95b410fff161bf16f11c6229655ec9c
                             // Signature for event OutboundMessageAccepted(bytes32 indexed channel_id, uint64 nonce, bytes32 indexed message_id, bytes payload);
-                            let event_topic = hex::decode("7153f9357c8ea496bba60bf82e67143e27b64462b49041f8e689e1b05728f84f").unwrap();
+                            let event_topic = hex::decode(
+                                "7153f9357c8ea496bba60bf82e67143e27b64462b49041f8e689e1b05728f84f",
+                            )
+                            .unwrap();
                             let event_topic: [u8; 32] = event_topic.try_into().unwrap();
                             let event_topic: H256 = event_topic.into();
                             // There are no channels in snowbridge v2?
                             let topic_channel_id = H256::default();
                             let topic_message_id = H256::default();
                             let topics = vec![
-                                event_topic, // event signature
+                                event_topic,      // event signature
                                 topic_channel_id, // channel id
                                 topic_message_id, // message id
                             ];
@@ -1399,15 +1414,22 @@ pub fn fuzz_live_oneblock<FC: FuzzerConfig<ExtrOrPseudo = ExtrOrPseudo>>(data: &
                             };
                             match (&log).try_into() {
                                 Ok(msg) => {
-                                    ExtStorageTracer::set_block_context(BlockContext::ExtrinsicSigned);
+                                    ExtStorageTracer::set_block_context(
+                                        BlockContext::ExtrinsicSigned,
+                                    );
                                     let relayer = get_origin(relayer as usize);
                                     let res = with_storage_layer(|| {
-                                        EthereumInboundQueueV2::process_message(relayer.clone(), msg)
+                                        EthereumInboundQueueV2::process_message(
+                                            relayer.clone(),
+                                            msg,
+                                        )
                                     });
                                     if res.is_ok() {
-                                        log::info!("Got successful EthereumInboundQueueV2 message!");
+                                        log::info!(
+                                            "Got successful EthereumInboundQueueV2 message!"
+                                        );
                                     }
-                                },
+                                }
                                 // Ignore parse errors
                                 Err(_) => continue,
                             }

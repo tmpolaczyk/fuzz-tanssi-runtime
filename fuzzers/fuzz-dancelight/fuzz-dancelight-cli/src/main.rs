@@ -1,17 +1,17 @@
 use anyhow::{Result, anyhow};
+use arbitrary::{Arbitrary, Unstructured};
 use clap::{Parser, Subcommand};
 use fuzz_dancelight::{
     EVENT_TRACER, EXTR_TRACER, ExtrOrPseudo, FuzzLiveOneblock, FuzzRuntimeCall, FuzzZombie,
-    STORAGE_TRACER, StorageTracer, TraceEvents, TraceStorage, example_runtime_call,
-    extrinsics_iter, fuzz_decode_calls, fuzz_init, fuzz_init_only_logger, fuzz_live_oneblock, fuzz_inbound_v2,
-    fuzz_zombie, FuzzerConfig
+    FuzzerConfig, STORAGE_TRACER, StorageTracer, TraceEvents, TraceStorage, example_runtime_call,
+    extrinsics_iter, fuzz_decode_calls, fuzz_inbound_v2, fuzz_init, fuzz_init_only_logger,
+    fuzz_live_oneblock, fuzz_zombie,
 };
 use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
 use scale_info::TypeInfo;
 use scale_info::scale::Encode;
 use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
-use arbitrary::{Arbitrary, Unstructured};
 
 mod coverage;
 
