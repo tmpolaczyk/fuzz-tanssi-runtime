@@ -2186,7 +2186,6 @@ dependencies = [
 [[package]]
 name = "dancelight-runtime"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "binary-merkle-tree",
  "bitvec",
@@ -2345,7 +2344,6 @@ dependencies = [
 [[package]]
 name = "dancelight-runtime-constants"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-support",
  "hex-literal",
@@ -6655,7 +6653,6 @@ dependencies = [
 [[package]]
 name = "pallet-alt-benchmarks"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -6723,7 +6720,6 @@ dependencies = [
 [[package]]
 name = "pallet-author-noting"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "cumulus-pallet-parachain-system",
  "cumulus-primitives-core",
@@ -6750,7 +6746,6 @@ dependencies = [
 [[package]]
 name = "pallet-author-noting-runtime-api"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "parity-scale-codec",
  "sp-api",
@@ -6759,7 +6754,6 @@ dependencies = [
 [[package]]
 name = "pallet-authority-assignment"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "dp-collator-assignment",
  "frame-support",
@@ -6789,7 +6783,6 @@ dependencies = [
 [[package]]
 name = "pallet-authority-mapping"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -6987,7 +6980,6 @@ dependencies = [
 [[package]]
 name = "pallet-collator-assignment"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "dp-collator-assignment",
  "frame-benchmarking",
@@ -7023,7 +7015,6 @@ dependencies = [
 [[package]]
 name = "pallet-configuration"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -7055,7 +7046,6 @@ dependencies = [
 [[package]]
 name = "pallet-data-preservers"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "dp-core",
  "frame-benchmarking",
@@ -7073,7 +7063,6 @@ dependencies = [
 [[package]]
 name = "pallet-data-preservers-runtime-api"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
@@ -7104,7 +7093,6 @@ dependencies = [
 [[package]]
 name = "pallet-ethereum-token-transfers"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -7129,7 +7117,6 @@ dependencies = [
 [[package]]
 name = "pallet-external-validator-slashes"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -7151,7 +7138,6 @@ dependencies = [
 [[package]]
 name = "pallet-external-validators"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -7170,7 +7156,6 @@ dependencies = [
 [[package]]
 name = "pallet-external-validators-rewards"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "cumulus-primitives-core",
  "frame-benchmarking",
@@ -7197,7 +7182,6 @@ dependencies = [
 [[package]]
 name = "pallet-external-validators-rewards-runtime-api"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "parity-scale-codec",
  "snowbridge-merkle-tree",
@@ -7280,7 +7264,6 @@ dependencies = [
 [[package]]
 name = "pallet-inactivity-tracking"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -7298,7 +7281,6 @@ dependencies = [
 [[package]]
 name = "pallet-inflation-rewards"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "dp-core",
  "frame-benchmarking",
@@ -7316,7 +7298,6 @@ dependencies = [
 [[package]]
 name = "pallet-initializer"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -7329,7 +7310,6 @@ dependencies = [
 [[package]]
 name = "pallet-invulnerables"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -7454,7 +7434,6 @@ dependencies = [
 [[package]]
 name = "pallet-outbound-message-commitment-recorder"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -7483,7 +7462,6 @@ dependencies = [
 [[package]]
 name = "pallet-pooled-staking"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -7541,7 +7519,6 @@ dependencies = [
 [[package]]
 name = "pallet-registrar"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "cumulus-primitives-core",
  "dp-chain-state-snapshot",
@@ -7563,7 +7540,6 @@ dependencies = [
 [[package]]
 name = "pallet-registrar-runtime-api"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "dp-container-chain-genesis-data",
  "frame-support",
@@ -7681,7 +7657,6 @@ dependencies = [
 [[package]]
 name = "pallet-services-payment"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "cumulus-primitives-core",
  "frame-benchmarking",
@@ -7699,7 +7674,6 @@ dependencies = [
 [[package]]
 name = "pallet-services-payment-runtime-api"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "parity-scale-codec",
  "sp-api",
@@ -7756,7 +7730,6 @@ dependencies = [
 [[package]]
 name = "pallet-stream-payment"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -7772,7 +7745,6 @@ dependencies = [
 [[package]]
 name = "pallet-stream-payment-runtime-api"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
@@ -12486,7 +12458,6 @@ dependencies = [
 [[package]]
 name = "starlight-runtime"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "binary-merkle-tree",
  "bitvec",
@@ -12638,7 +12609,6 @@ dependencies = [
 [[package]]
 name = "starlight-runtime-constants"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-support",
  "hex-literal",
@@ -12992,7 +12962,6 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 [[package]]
 name = "tanssi-runtime-common"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "cumulus-pallet-xcmp-queue",
  "cumulus-primitives-core",
@@ -13444,7 +13413,6 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 [[package]]
 name = "tp-author-noting-inherent"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "async-trait",
  "cumulus-primitives-core",
@@ -13466,7 +13434,6 @@ dependencies = [
 [[package]]
 name = "tp-bridge"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "alloy-core",
  "cumulus-primitives-core",
@@ -13499,7 +13466,6 @@ dependencies = [
 [[package]]
 name = "tp-data-preservers-common"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -13520,7 +13486,6 @@ dependencies = [
 [[package]]
 name = "tp-invulnerables-filter-common"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "pallet-invulnerables",
  "polkadot-primitives",
@@ -13530,7 +13495,6 @@ dependencies = [
 [[package]]
 name = "tp-maths"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "sp-core",
  "sp-runtime",
@@ -13539,7 +13503,6 @@ dependencies = [
 [[package]]
 name = "tp-message-queue"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-support",
  "pallet-message-queue",
@@ -13550,7 +13513,6 @@ dependencies = [
 [[package]]
 name = "tp-parathread-filter-common"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "pallet-registrar",
  "pallet-session",
@@ -13560,7 +13522,6 @@ dependencies = [
 [[package]]
 name = "tp-stream-payment-common"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -13579,7 +13540,6 @@ dependencies = [
 [[package]]
 name = "tp-traits"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "cumulus-primitives-core",
  "dp-chain-state-snapshot",
@@ -13597,7 +13557,6 @@ dependencies = [
 [[package]]
 name = "tp-xcm-commons"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "dp-xcm-reserve",
  "frame-support",
@@ -13934,7 +13893,6 @@ dependencies = [
 [[package]]
 name = "v2_processor_proc_macro"
 version = "0.1.0"
-source = "git+https://github.com/moondance-labs/tanssi?branch=master#2cd1457817be1b6a49158167346c9d537f9e16f7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -15187,6 +15145,198 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "asset-dancebox-integration-tests"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "asset-dancelight-integration-tests"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "asset-starlight-integration-tests"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "bridge-dancelight-integration-tests"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "bridge-starlight-integration-tests"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "container-chain-frontier-node"
+version = "0.17.0"
+
+[[patch.unused]]
+name = "container-chain-simple-node"
+version = "0.17.0"
+
+[[patch.unused]]
+name = "container-chain-template-frontier-runtime"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "container-chain-template-simple-runtime"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "dancebox-emulated-chain"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "dancebox-runtime"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "dancebox-runtime-test-utils"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "dancebox-runtime-tests"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "dancelight-emulated-chain"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "dancelight-system-emulated-network"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "flashbox-runtime"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "frontier-template-emulated-chain"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "manual-container-chains-exclusion-rpc"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "manual-randomness-rpc"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "manual-xcm-rpc"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "node-common"
+version = "0.17.0"
+
+[[patch.unused]]
+name = "pallet-collator-assignment-runtime-api"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "pallet-ocw-testing"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "pallet-xcm-core-buyer"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "pallet-xcm-core-buyer-runtime-api"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "rococo-emulated-chain"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "rococo-system-emulated-network"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "services-payment-rpc"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "simple-template-emulated-chain"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "starlight-emulated-chain"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "starlight-system-emulated-network"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "stream-payment-rpc"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "tanssi-emulated-integration-tests-common"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "tanssi-node"
+version = "0.17.0"
+
+[[patch.unused]]
+name = "tanssi-relay"
+version = "0.17.0"
+
+[[patch.unused]]
+name = "tanssi-relay-cli"
+version = "0.17.0"
+
+[[patch.unused]]
+name = "tanssi-relay-encoder"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "tanssi-relay-service"
+version = "0.17.0"
+
+[[patch.unused]]
+name = "tanssi-utils"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "tc-consensus"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "tc-orchestrator-chain-interface-through-rpc"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "tc-service-container-chain-data-preserver"
+version = "0.17.0"
+
+[[patch.unused]]
+name = "tc-service-container-chain-spawner"
+version = "0.17.0"
+
+[[patch.unused]]
+name = "tc-service-orchestrator-chain"
+version = "0.17.0"
+
+[[patch.unused]]
+name = "tp-container-chain"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "tp-xcm-core-buyer"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "westend-emulated-chain"
+version = "0.0.0"
+
+[[patch.unused]]
+name = "westend-system-emulated-network"
+version = "0.0.0"
 
 [[patch.unused]]
 name = "asset-hub-rococo-emulated-chain"
