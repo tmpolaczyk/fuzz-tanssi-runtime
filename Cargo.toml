@@ -19,12 +19,12 @@ repository = "https://github.com/tmpolaczyk/fuzz-tanssi-runtime"
 fuzz-dancelight = { path = "fuzzers/fuzz-dancelight" }
 fuzz-starlight = { path = "fuzzers/fuzz-starlight" }
 
-dancelight-runtime = { path = "../tanssi/chains/orchestrator-relays/runtime/dancelight", default-features = false }
-dancelight-runtime-constants = { path = "../tanssi/chains/orchestrator-relays/runtime/dancelight/constants/", default-features = false }
-starlight-runtime = { path = "../tanssi/chains/orchestrator-relays/runtime/starlight", default-features = false }
-starlight-runtime-constants = { path = "../tanssi/chains/orchestrator-relays/runtime/starlight/constants/", default-features = false }
-pallet-configuration = { path = "../tanssi/pallets/configuration", default-features = false }
-tp-traits = { path = "../tanssi/primitives/traits", default-features = false }
+dancelight-runtime = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
+dancelight-runtime-constants = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
+starlight-runtime = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
+starlight-runtime-constants = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
+pallet-configuration = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
+tp-traits = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
 
 cumulus-primitives-core = { git = "https://github.com/moondance-labs/polkadot-sdk", branch = "tanssi-polkadot-stable2506", default-features = false }
 frame-support = { git = "https://github.com/moondance-labs/polkadot-sdk.git", branch = "tanssi-polkadot-stable2506", default-features = false }
