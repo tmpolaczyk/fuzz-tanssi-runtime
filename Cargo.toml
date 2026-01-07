@@ -7,8 +7,8 @@ members = [
 	"fuzzers/*",
 	"fuzzers/fuzz-dancelight/fuzz",
 	"fuzzers/fuzz-dancelight/fuzz-dancelight-cli",
-	"fuzzers/fuzz-starlight/fuzz",
-	"fuzzers/fuzz-starlight/fuzz-starlight-cli",
+	#"fuzzers/fuzz-starlight/fuzz",
+	#"fuzzers/fuzz-starlight/fuzz-starlight-cli",
 ]
 resolver = "2"
 
