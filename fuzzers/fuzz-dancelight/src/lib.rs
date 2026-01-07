@@ -14,7 +14,7 @@ use crate::metadata::{
 };
 use crate::simple_backend::SimpleBackend;
 use crate::storage_tracer::{BlockContext, ExtStorageTracer, TracingExt};
-use crate::without_storage_root::WithoutStorageRoot;
+use externalities_without_storage_root::WithoutStorageRoot;
 use dancelight_runtime::{AuthorNoting, EthereumInboundQueueV2, Session, System, TanssiCollatorAssignment, TimestampProvider, UseSnowbridgeV2};
 use frame_support::dispatch::DispatchResultWithPostInfo;
 use frame_support::traits::CallerTrait;
@@ -83,7 +83,6 @@ mod genesis;
 mod metadata;
 mod mutators;
 mod read_snapshot;
-mod without_storage_root;
 // TODO: extract to separate crate to speed up compilation
 mod simple_backend;
 mod storage_tracer;

@@ -1,0 +1,14 @@
+[package]
+name = "externalities-without-storage-root"
+authors = { workspace = true }
+edition = "2024"
+license = "GPL-3.0-only"
+version = "0.1.0"
+
+[dependencies]
+sp-externalities = { workspace = true }
+sp-storage = { workspace = true }
+hex-literal = { workspace = true }
+
+[lints]
+workspace = true

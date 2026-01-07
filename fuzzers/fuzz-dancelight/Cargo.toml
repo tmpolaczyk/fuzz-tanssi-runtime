@@ -6,6 +6,7 @@ license = "GPL-3.0-only"
 version = "0.1.0"
 
 [dependencies]
+externalities-without-storage-root = { workspace = true }
 bitvec = { workspace = true }
 cumulus-primitives-core = { workspace = true }
 dancelight-runtime = { workspace = true, features = [ "fast-runtime", "std", "try-runtime" ] }

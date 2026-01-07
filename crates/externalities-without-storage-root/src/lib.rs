@@ -2,6 +2,7 @@ use sp_externalities::{Error, Extension, ExtensionStore, Externalities, MultiRem
 use sp_storage::{ChildInfo, StateVersion, TrackedStorageKey};
 use std::any::{Any, TypeId};
 
+/// Wrap externalities and return fake storage root based on block number
 pub struct WithoutStorageRoot<T> {
     inner: T,
 }
@@ -109,8 +110,7 @@ impl<T: Externalities> Externalities for WithoutStorageRoot<T> {
         let block_number = self
             .inner
             .storage(
-                &hex::decode("26aa394eea5630e07c48ae0c9558cef702a5c1b19ab7a04f536c519aca4983ac")
-                    .unwrap(),
+                &hex_literal::hex!("26aa394eea5630e07c48ae0c9558cef702a5c1b19ab7a04f536c519aca4983ac")
             )
             .unwrap();
         assert_eq!(block_number.len(), 4);

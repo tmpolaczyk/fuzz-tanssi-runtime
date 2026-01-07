@@ -1,6 +1,5 @@
 use super::*;
 use crate::genesis::invulnerables_from_seeds;
-use crate::without_storage_root::WithoutStorageRoot;
 
 pub fn read_snapshot(
     chain_spec_json_bytes: &[u8],

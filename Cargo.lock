@@ -3148,6 +3148,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "externalities-without-storage-root"
+version = "0.1.0"
+dependencies = [
+ "hex-literal",
+ "sp-externalities",
+ "sp-storage",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3807,6 +3816,7 @@ dependencies = [
  "dancelight-runtime-constants",
  "dp-container-chain-genesis-data",
  "dp-core",
+ "externalities-without-storage-root",
  "frame-metadata 16.0.0",
  "frame-support",
  "frame-system",

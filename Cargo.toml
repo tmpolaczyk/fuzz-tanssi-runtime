@@ -3,6 +3,7 @@ default-members = [
 	"fuzzers/*",
 ]
 members = [
+	"crates/*",
 	"fuzzers/*",
 	"fuzzers/fuzz-dancelight/fuzz",
 	"fuzzers/fuzz-dancelight/fuzz-dancelight-cli",
@@ -18,6 +19,7 @@ repository = "https://github.com/tmpolaczyk/fuzz-tanssi-runtime"
 [workspace.dependencies]
 fuzz-dancelight = { path = "fuzzers/fuzz-dancelight" }
 fuzz-starlight = { path = "fuzzers/fuzz-starlight" }
+externalities-without-storage-root = { path = "crates/externalities-without-storage-root" }
 
 dancelight-runtime = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
 dancelight-runtime-constants = { git = "https://github.com/moondance-labs/tanssi", branch = "master", default-features = false }
@@ -64,6 +66,7 @@ frame-metadata = "16"
 futures = "0.3.1"
 hash-db = { version = "0.16.0", default-features = false }
 hex = "0.4.3"
+hex-literal = "0.4.1"
 include_dir = "0.7.3"
 itertools = "0.10.5"
 lazy_static = "1.4.0"
