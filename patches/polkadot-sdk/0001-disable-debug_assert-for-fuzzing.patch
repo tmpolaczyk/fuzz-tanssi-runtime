@@ -1,0 +1,91 @@
+From a08460a3bbbb1d654254f67c7dc0e8aca7a4f159 Mon Sep 17 00:00:00 2001
+From: Tomasz Polaczyk <tmpolaczyk@gmail.com>
+Date: Wed, 7 Jan 2026 13:10:03 +0100
+Subject: [PATCH] disable debug_assert for fuzzing
+
+---
+ polkadot/node/gum/src/lib.rs                | 2 +-
+ polkadot/node/network/protocol/src/lib.rs   | 2 +-
+ polkadot/xcm/src/v5/asset.rs                | 6 ++++--
+ substrate/client/executor/common/src/lib.rs | 2 +-
+ substrate/client/rpc-spec-v2/src/lib.rs     | 2 +-
+ 5 files changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/polkadot/node/gum/src/lib.rs b/polkadot/node/gum/src/lib.rs
+index f78e20cdecf..1055ab9423e 100644
+--- a/polkadot/node/gum/src/lib.rs
++++ b/polkadot/node/gum/src/lib.rs
+@@ -14,7 +14,7 @@
+ // You should have received a copy of the GNU General Public License
+ // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
+ 
+-#![deny(unused_crate_dependencies)]
++#![warn(unused_crate_dependencies)]
+ #![deny(missing_docs)]
+ #![deny(clippy::dbg_macro)]
+ 
+diff --git a/polkadot/node/network/protocol/src/lib.rs b/polkadot/node/network/protocol/src/lib.rs
+index fa9effe440b..ba0a7b23f25 100644
+--- a/polkadot/node/network/protocol/src/lib.rs
++++ b/polkadot/node/network/protocol/src/lib.rs
+@@ -16,7 +16,7 @@
+ 
+ //! Network protocol types for parachains.
+ 
+-#![deny(unused_crate_dependencies)]
++#![warn(unused_crate_dependencies)]
+ #![warn(missing_docs)]
+ 
+ use codec::{Decode, Encode};
+diff --git a/polkadot/xcm/src/v5/asset.rs b/polkadot/xcm/src/v5/asset.rs
+index 9888e339bbc..980b2333c24 100644
+--- a/polkadot/xcm/src/v5/asset.rs
++++ b/polkadot/xcm/src/v5/asset.rs
+@@ -296,14 +296,16 @@ impl Fungibility {
+ 
+ impl From<i32> for Fungibility {
+ 	fn from(amount: i32) -> Fungibility {
+-		debug_assert_ne!(amount, 0);
++        // Error on negative amount
++        debug_assert!(amount >= 0);
++		//debug_assert_ne!(amount, 0);
+ 		Fungibility::Fungible(amount as u128)
+ 	}
+ }
+ 
+ impl From<u128> for Fungibility {
+ 	fn from(amount: u128) -> Fungibility {
+-		debug_assert_ne!(amount, 0);
++		//debug_assert_ne!(amount, 0);
+ 		Fungibility::Fungible(amount)
+ 	}
+ }
+diff --git a/substrate/client/executor/common/src/lib.rs b/substrate/client/executor/common/src/lib.rs
+index ff9fab2c888..e98a9a50612 100644
+--- a/substrate/client/executor/common/src/lib.rs
++++ b/substrate/client/executor/common/src/lib.rs
+@@ -19,7 +19,7 @@
+ //! A set of common definitions that are needed for defining execution engines.
+ 
+ #![warn(missing_docs)]
+-#![deny(unused_crate_dependencies)]
++#![warn(unused_crate_dependencies)]
+ 
+ pub mod error;
+ pub mod runtime_blob;
+diff --git a/substrate/client/rpc-spec-v2/src/lib.rs b/substrate/client/rpc-spec-v2/src/lib.rs
+index de32a6d571e..905fa41f5dc 100644
+--- a/substrate/client/rpc-spec-v2/src/lib.rs
++++ b/substrate/client/rpc-spec-v2/src/lib.rs
+@@ -21,7 +21,7 @@
+ //! Specification [document](https://paritytech.github.io/json-rpc-interface-spec/).
+ 
+ #![warn(missing_docs)]
+-#![deny(unused_crate_dependencies)]
++#![warn(unused_crate_dependencies)]
+ 
+ use sp_core::hexdisplay::{AsBytesRef, HexDisplay};
+ 
+-- 
+2.43.0
+
